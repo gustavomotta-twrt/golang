@@ -72,8 +72,7 @@ type ClickUpTask struct {
 	OrderIndex string `json:"orderindex"`
 	DateCreated string `json:"date_created"`
 	DateUpdated string `json:"date_updated"`
-	DateClosed *int64 `json:"date_closed"`
-	DateDone *int64 `json:"date_done"`
+	DateClosed *string `json:"date_closed"`
 	Creator ClickUpCreator `json:"creator"`
 	Assignees []ClickUpAssignees `json:"assignees"`
 	Priority *ClickUpPriority `json:"priority"`

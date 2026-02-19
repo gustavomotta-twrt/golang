@@ -52,13 +52,10 @@ func (s *MigrationService) executeMigration(
 		return
 	}
 
-	// Passo 2: Atualizar total de tasks no BD
-	// TODO: Criar método UpdateTotal no repository
+	s.migrationRepo.UpdateTotalTasks(migrationID, len(tasks))
 
-	// Passo 3: Atualizar status para "running"
-	// TODO: Criar método UpdateStatus no repository
+	s.migrationRepo.UpdateStatus(migrationID, "running")
 
-	// Passo 4: Loop para migrar cada task
 	successCount := 0
 	failCount := 0
 
@@ -68,7 +65,7 @@ func (s *MigrationService) executeMigration(
 		fmt.Printf("STATUS ASANA: %s\n", task.Status)
 		task.Status = mapStatus(task.Status, statusMappings)
 		fmt.Printf("STATUS APÓS MAP: %s\n", task.Status)
-		
+
 		created, err := s.destinationClient.CreateTask(destListId, task)
 		if err != nil {
 			mapping := &repository.TaskMapping{
@@ -126,4 +123,22 @@ func (s *MigrationService) StartMigrationAsync(
 	go s.executeMigration(migrationId, sourceProjectId, destListId, statusMappings, assigneesMappings)
 
 	return migrationId, nil
+}
+
+func (s *MigrationService) GetMigrations() ([]repository.Migration, error) {
+	migrations, err := s.migrationRepo.GetMigrations()
+	if err != nil {
+		return nil, fmt.Errorf("Error trying to get registers inside of DB: %w", err)
+	}
+
+	return migrations, nil
+}
+
+func (s *MigrationService) GetMigration(id string) (repository.Migration, error) {
+	migration, err := s.migrationRepo.GetMigration(id)
+	if err != nil {
+		return repository.Migration{}, fmt.Errorf("Error trying to get the migration: %w", err)
+	}
+
+	return migration, nil
 }
