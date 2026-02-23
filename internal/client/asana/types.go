@@ -4,11 +4,18 @@ type AsanaResponse[T any] struct {
 	Data []T `json:"data"`
 }
 
+type AsanaUser struct {
+	Gid   string `json:"gid"`
+	Name  string `json:"name"`
+	Email string `json:"email"`
+}
+
 type AsanaTasks struct {
-	Gid       string `json:"gid"`
-	Name      string `json:"name"`
-	Notes     string `json:"notes"`
-	Completed bool   `json:"completed"`
+	Gid       string     `json:"gid"`
+	Name      string     `json:"name"`
+	Notes     string     `json:"notes"`
+	Completed bool       `json:"completed"`
+	Assignee  *AsanaUser `json:"assignee"`
 }
 
 type AsanaDetailError struct {
@@ -25,6 +32,7 @@ type CreateTaskRequest struct {
 	Notes     string   `json:"notes,omitempty"`
 	Projects  []string `json:"projects,omitempty"`
 	Completed bool     `json:"completed"`
+	Assignee  string   `json:"assignee,omitempty"`
 }
 
 type CreateTaskRequestWrapper struct {
@@ -42,7 +50,7 @@ type GetMultipleWorkspacesResponse struct {
 }
 
 type GetMultipleProjectsResponse struct {
-	Id          string `json:"gid"`
+	Id           string `json:"gid"`
 	ResourceType string `json:"resource_type"`
 	Name         string `json:"name"`
 }

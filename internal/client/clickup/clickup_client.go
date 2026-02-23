@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/TWRT/integration-mapper/internal/models"
@@ -72,10 +73,19 @@ func (c *ClickUpClient) GetTasks(listId string) ([]models.Task, error) {
 
 	tasks := make([]models.Task, len(clickUpResp.Tasks))
 	for i, clickUpTask := range clickUpResp.Tasks {
+		assignees := make([]models.TaskAssignee, 0, len(clickUpTask.Assignees))
+		for _, a := range clickUpTask.Assignees {
+			assignees = append(assignees, models.TaskAssignee{
+				ID:    fmt.Sprintf("%d", a.Id),
+				Name:  a.Username,
+				Email: a.Email,
+			})
+		}
 		tasks[i] = models.Task{
-			Id:     clickUpTask.Id,
-			Name:   clickUpTask.Name,
-			Status: clickUpTask.Status.Status,
+			Id:        clickUpTask.Id,
+			Name:      clickUpTask.Name,
+			Status:    clickUpTask.Status.Status,
+			Assignees: assignees,
 		}
 	}
 
@@ -83,10 +93,19 @@ func (c *ClickUpClient) GetTasks(listId string) ([]models.Task, error) {
 }
 
 func (c *ClickUpClient) CreateTask(listId string, task models.Task) (*models.Task, error) {
+	assignees := make([]int, 0, len(task.Assignees))
+	for _, a := range task.Assignees {
+		id, err := strconv.Atoi(a.ID)
+		if err != nil {
+			continue
+		}
+		assignees = append(assignees, id)
+	}
 	reqBody := CreateTaskRequest{
 		Name:        task.Name,
 		Description: task.Description,
 		Status:      task.Status,
+		Assignees:   assignees,
 	}
 
 	url := c.baseUrl + "/list/" + listId + "/task"
@@ -191,6 +210,28 @@ func (c *ClickUpClient) GetWorkspaces() ([]ClickUpTeams, error) {
 	}
 	
 	return clickupResp.Teams, nil
+}
+
+func (c *ClickUpClient) GetMembers(workspaceId string) ([]models.Member, error) {
+	teams, err := c.GetWorkspaces()
+	if err != nil {
+		return nil, fmt.Errorf("get workspace members (clickup): %w", err)
+	}
+
+	for _, team := range teams {
+		if team.Id == workspaceId {
+			members := make([]models.Member, 0, len(team.Members))
+			for _, m := range team.Members {
+				members = append(members, models.Member{
+					ID:    fmt.Sprintf("%d", m.User.Id),
+					Name:  m.User.Username,
+					Email: m.User.Email,
+				})
+			}
+			return members, nil
+		}
+	}
+	return nil, fmt.Errorf("workspace %s not found (clickup)", workspaceId)
 }
 
 func (c *ClickUpClient) GetSpaces(workspaceId string) ([]ClickUpSpace, error) {

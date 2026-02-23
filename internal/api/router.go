@@ -19,12 +19,16 @@ func SetupRouter(db *sql.DB, asanaToken string, clickupToken string) *http.Serve
 
 	migrationRepo := repository.NewMigrationRepository(db)
 	taskMappingRepo := repository.NewTaskMappingRepository(db)
+	pendingAssigneeMappingRepo := repository.NewPendingAssigneeMappingRepository(db)
 
 	migrationService := service.NewMigrationService(
 		asanaClient,
 		clickUpClient,
+		asanaClient,
+		clickUpClient,
 		migrationRepo,
 		taskMappingRepo,
+		pendingAssigneeMappingRepo,
 	)
 
 	integrationService := service.NewIntegrationService(
@@ -42,6 +46,8 @@ func SetupRouter(db *sql.DB, asanaToken string, clickupToken string) *http.Serve
 	mux.HandleFunc("GET /asana/workspaces/{id}/projects", integrationHandler.GetAsanaProjects)
 	mux.HandleFunc("GET /clickup/workspaces", integrationHandler.GetClickupWorkspaces)
 	mux.HandleFunc("GET /clickup/workspaces/{id}/spaces", integrationHandler.GetClickupSpaces)
+	mux.HandleFunc("GET /migrations/{id}/pending-assignees", migrationHandler.GetPendingAssignees)
+	mux.HandleFunc("POST /migrations/{id}/assignee-mappings", migrationHandler.SubmitAssigneeMappings)
 
 	return mux
 }

@@ -26,7 +26,7 @@ func NewAsanaClient(token string) *AsanaClient {
 }
 
 func (c *AsanaClient) GetTasks(projectId string) ([]models.Task, error) {
-	url := c.baseUrl + "/tasks?project=" + projectId + "&opt_fields=name,notes,completed"
+	url := c.baseUrl + "/tasks?project=" + projectId + "&opt_fields=name,notes,completed,assignee,assignee.gid,assignee.name,assignee.email"
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -76,11 +76,20 @@ func (c *AsanaClient) GetTasks(projectId string) ([]models.Task, error) {
 		if asanaTask.Completed {
 			status = "Completed"
 		}
+		var assignees []models.TaskAssignee
+		if asanaTask.Assignee != nil {
+			assignees = []models.TaskAssignee{{
+				ID:    asanaTask.Assignee.Gid,
+				Name:  asanaTask.Assignee.Name,
+				Email: asanaTask.Assignee.Email,
+			}}
+		}
 		tasks[i] = models.Task{
 			Id:          asanaTask.Gid,
 			Name:        asanaTask.Name,
 			Description: asanaTask.Notes,
 			Status:      status,
+			Assignees:   assignees,
 		}
 	}
 
@@ -93,6 +102,9 @@ func (c *AsanaClient) CreateTask(projectId string, task models.Task) (*models.Ta
 		Notes:     task.Description,
 		Completed: task.Status == "Completed",
 		Projects:  []string{projectId},
+	}
+	if len(task.Assignees) > 0 {
+		reqBody.Assignee = task.Assignees[0].ID
 	}
 
 	wrapper := CreateTaskRequestWrapper{
@@ -160,6 +172,55 @@ func (c *AsanaClient) CreateTask(projectId string, task models.Task) (*models.Ta
 	}
 
 	return result, nil
+}
+
+func (c *AsanaClient) GetMembers(workspaceId string) ([]models.Member, error) {
+	url := c.baseUrl + "/users?workspace=" + workspaceId + "&opt_fields=name,email"
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build request (asana): %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+c.token)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("get members (asana): %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		errorBody, _ := io.ReadAll(resp.Body)
+		var asanaErr AsanaErrors
+		if err := json.Unmarshal(errorBody, &asanaErr); err != nil {
+			return nil, fmt.Errorf("get members (asana): status %d", resp.StatusCode)
+		}
+		if len(asanaErr.Errors) > 0 {
+			return nil, fmt.Errorf("Asana error: %s", asanaErr.Errors[0].Message)
+		}
+		return nil, fmt.Errorf("get members (asana): status %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read response (asana): %w", err)
+	}
+
+	var asanaResp AsanaResponse[AsanaUser]
+	if err := json.Unmarshal(body, &asanaResp); err != nil {
+		return nil, fmt.Errorf("parse users (asana): %w", err)
+	}
+
+	members := make([]models.Member, 0, len(asanaResp.Data))
+	for _, u := range asanaResp.Data {
+		members = append(members, models.Member{
+			ID:    u.Gid,
+			Name:  u.Name,
+			Email: u.Email,
+		})
+	}
+	return members, nil
 }
 
 func (c *AsanaClient) GetWorkspaces() ([]GetMultipleWorkspacesResponse, error) {

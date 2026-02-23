@@ -6,6 +6,6 @@ type StatusMapping struct {
 }
 
 type AssigneeMapping struct {
-	SourceUserId string
-	DestUserId   string
+	SourceUserId string `json:"source_user_id"`
+	DestUserId   string `json:"dest_user_id"`
 }

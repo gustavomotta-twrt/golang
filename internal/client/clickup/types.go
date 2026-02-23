@@ -99,4 +99,5 @@ type CreateTaskRequest struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
 	Status      string `json:"status,omitempty"`
+	Assignees   []int  `json:"assignees,omitempty"`
 }

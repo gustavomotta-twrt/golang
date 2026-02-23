@@ -32,6 +32,8 @@ func createTables(db *sql.DB) error {
         destination TEXT NOT NULL,
         source_project_id TEXT NOT NULL,
         dest_list_id TEXT NOT NULL,
+        dest_workspace_id TEXT,
+        status_mappings TEXT,
         status TEXT NOT NULL,
         total_tasks INTEGER DEFAULT 0,
         completed_tasks INTEGER DEFAULT 0,
@@ -50,8 +52,20 @@ func createTables(db *sql.DB) error {
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (migration_id) REFERENCES migrations(id)
     );
+
+    CREATE TABLE IF NOT EXISTS pending_assignee_mappings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        migration_id INTEGER NOT NULL,
+        source_user_id TEXT NOT NULL,
+        source_user_name TEXT NOT NULL,
+        source_user_email TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (migration_id) REFERENCES migrations(id)
+    );
     `
 
-	_, err := db.Exec(schema)
-	return err
+	if _, err := db.Exec(schema); err != nil {
+		return err
+	}
+	return nil
 }

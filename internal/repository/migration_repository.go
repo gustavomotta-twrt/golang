@@ -12,6 +12,8 @@ type Migration struct {
 	Destination     string
 	SourceProjectID string
 	DestListID      string
+	DestWorkspaceID string
+	StatusMappings  string
 	Status          string
 	TotalTasks      int
 	CompletedTasks  int
@@ -30,8 +32,8 @@ func NewMigrationRepository(db *sql.DB) *MigrationRepository {
 
 func (r *MigrationRepository) Create(migration *Migration) (int64, error) {
 	query := `
-	INSERT INTO migrations (source, destination, source_project_id, dest_list_id, status, total_tasks)
-        VALUES (?, ?, ?, ?, ?, ?)
+	INSERT INTO migrations (source, destination, source_project_id, dest_list_id, dest_workspace_id, status_mappings, status, total_tasks)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	result, err := r.db.Exec(query,
@@ -39,6 +41,8 @@ func (r *MigrationRepository) Create(migration *Migration) (int64, error) {
 		migration.Destination,
 		migration.SourceProjectID,
 		migration.DestListID,
+		migration.DestWorkspaceID,
+		migration.StatusMappings,
 		migration.Status,
 		migration.TotalTasks,
 	)
@@ -63,9 +67,7 @@ func (r *MigrationRepository) Complete(id int64, status string) error {
 }
 
 func (r *MigrationRepository) GetMigrations() ([]Migration, error) {
-	query := `
-	SELECT * FROM migrations
-	`
+	query := `SELECT id, source, destination, source_project_id, dest_list_id, dest_workspace_id, status_mappings, status, total_tasks, completed_tasks, failed_tasks, started_at, completed_at FROM migrations`
 	rows, err := r.db.Query(query)
 
 	if err != nil {
@@ -77,12 +79,15 @@ func (r *MigrationRepository) GetMigrations() ([]Migration, error) {
 
 	for rows.Next() {
 		var m Migration
+		var destWorkspaceID, statusMappings sql.NullString
 		err := rows.Scan(
 			&m.Id,
 			&m.Source,
 			&m.Destination,
 			&m.SourceProjectID,
 			&m.DestListID,
+			&destWorkspaceID,
+			&statusMappings,
 			&m.Status,
 			&m.TotalTasks,
 			&m.CompletedTasks,
@@ -93,6 +98,12 @@ func (r *MigrationRepository) GetMigrations() ([]Migration, error) {
 		if err != nil {
 			return nil, err
 		}
+		if destWorkspaceID.Valid {
+			m.DestWorkspaceID = destWorkspaceID.String
+		}
+		if statusMappings.Valid {
+			m.StatusMappings = statusMappings.String
+		}
 		migrations = append(migrations, m)
 	}
 
@@ -100,17 +111,18 @@ func (r *MigrationRepository) GetMigrations() ([]Migration, error) {
 }
 
 func (r *MigrationRepository) GetMigration(id string) (Migration, error) {
-	query := `
-		SELECT * FROM migrations where id = ?
-	`
+	query := `SELECT id, source, destination, source_project_id, dest_list_id, dest_workspace_id, status_mappings, status, total_tasks, completed_tasks, failed_tasks, started_at, completed_at FROM migrations WHERE id = ?`
 
 	var m Migration
+	var destWorkspaceID, statusMappings sql.NullString
 	err := r.db.QueryRow(query, id).Scan(
 		&m.Id,
 		&m.Source,
 		&m.Destination,
 		&m.SourceProjectID,
 		&m.DestListID,
+		&destWorkspaceID,
+		&statusMappings,
 		&m.Status,
 		&m.TotalTasks,
 		&m.CompletedTasks,
@@ -121,7 +133,12 @@ func (r *MigrationRepository) GetMigration(id string) (Migration, error) {
 	if err != nil {
 		return Migration{}, fmt.Errorf("Error trying to get migration: %w", err)
 	}
-
+	if destWorkspaceID.Valid {
+		m.DestWorkspaceID = destWorkspaceID.String
+	}
+	if statusMappings.Valid {
+		m.StatusMappings = statusMappings.String
+	}
 	return m, nil
 }
 
