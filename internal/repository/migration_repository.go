@@ -110,7 +110,7 @@ func (r *MigrationRepository) GetMigrations() ([]Migration, error) {
 	return migrations, nil
 }
 
-func (r *MigrationRepository) GetMigration(id string) (Migration, error) {
+func (r *MigrationRepository) GetMigration(id int64) (Migration, error) {
 	query := `SELECT id, source, destination, source_project_id, dest_list_id, dest_workspace_id, status_mappings, status, total_tasks, completed_tasks, failed_tasks, started_at, completed_at FROM migrations WHERE id = ?`
 
 	var m Migration

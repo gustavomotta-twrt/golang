@@ -216,10 +216,20 @@ func (h *MigrationHandler) SubmitAssigneeMappings(w http.ResponseWriter, r *http
 }
 
 func (h *MigrationHandler) GetMigration(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
+	idStr := r.PathValue("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "invalid migration id",
+		})
+		return
+	}
 
 	migration, err := h.migrationService.GetMigration(id)
 	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{
 			"error": "Error trying to get migration: " + err.Error(),

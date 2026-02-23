@@ -229,7 +229,11 @@ func (s *MigrationService) StartMigrationAsync(
 	statusMappings []models.StatusMapping,
 	assigneesMappings []models.AssigneeMapping,
 ) (int64, error) {
-	statusMappingsJSON, _ := json.Marshal(statusMappings)
+	statusMappingsJSON, err := json.Marshal(statusMappings)
+	if err != nil {
+		return 0, fmt.Errorf("marshal status mappings: %w", err)
+	}
+
 	migration := &repository.Migration{
 		Source:           source,
 		Destination:      destination,
@@ -261,7 +265,7 @@ func (s *MigrationService) StartMigrationAsync(
 }
 
 func (s *MigrationService) GetPendingAssignees(migrationID int64) ([]repository.PendingAssigneeMapping, []models.Member, error) {
-	migration, err := s.migrationRepo.GetMigration(fmt.Sprintf("%d", migrationID))
+	migration, err := s.migrationRepo.GetMigration(migrationID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("get migration: %w", err)
 	}
@@ -300,7 +304,7 @@ func (s *MigrationService) ResumeMigration(migrationID int64, manualMappings []m
 		return fmt.Errorf("delete pending mappings: %w", err)
 	}
 
-	migration, err := s.migrationRepo.GetMigration(fmt.Sprintf("%d", migrationID))
+	migration, err := s.migrationRepo.GetMigration(migrationID)
 	if err != nil {
 		return fmt.Errorf("get migration: %w", err)
 	}
@@ -370,7 +374,7 @@ func (s *MigrationService) GetMigrations() ([]repository.Migration, error) {
 	return migrations, nil
 }
 
-func (s *MigrationService) GetMigration(id string) (repository.Migration, error) {
+func (s *MigrationService) GetMigration(id int64) (repository.Migration, error) {
 	migration, err := s.migrationRepo.GetMigration(id)
 	if err != nil {
 		return repository.Migration{}, fmt.Errorf("Error trying to get migration: %w", err)
