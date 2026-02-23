@@ -26,6 +26,26 @@ func NewClickUpClient(token string) *ClickUpClient {
 	}
 }
 
+func parseClickUpDueDate(s string) (*time.Time, error) {
+	if s == "" {
+		return nil, nil
+	}
+	ms, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("parse due_date (clickup): %w", err)
+	}
+	t := time.UnixMilli(ms).UTC()
+	return &t, nil
+}
+
+func timeToMs(t *time.Time) *int64 {
+	if t == nil {
+		return nil
+	}
+	ms := t.UnixMilli()
+	return &ms
+}
+
 func (c *ClickUpClient) GetTasks(listId string) ([]models.Task, error) {
 	url := c.baseUrl + "/list/" + listId + "/task?include_closed=true"
 
@@ -81,11 +101,16 @@ func (c *ClickUpClient) GetTasks(listId string) ([]models.Task, error) {
 				Email: a.Email,
 			})
 		}
+		dueDate, err := parseClickUpDueDate(clickUpTask.DueDate)
+		if err != nil {
+			return nil, err
+		}
 		tasks[i] = models.Task{
 			Id:        clickUpTask.Id,
 			Name:      clickUpTask.Name,
 			Status:    clickUpTask.Status.Status,
 			Assignees: assignees,
+			DueDate:   dueDate,
 		}
 	}
 
@@ -106,6 +131,7 @@ func (c *ClickUpClient) CreateTask(listId string, task models.Task) (*models.Tas
 		Description: task.Description,
 		Status:      task.Status,
 		Assignees:   assignees,
+		DueDate:     timeToMs(task.DueDate),
 	}
 
 	url := c.baseUrl + "/list/" + listId + "/task"

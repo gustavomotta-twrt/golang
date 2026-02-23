@@ -89,7 +89,7 @@ type ClickUpTask struct {
 	Creator      ClickUpCreator     `json:"creator"`
 	Assignees    []ClickUpAssignees `json:"assignees"`
 	Priority     *ClickUpPriority   `json:"priority"`
-	DueDate      *int64             `json:"due_date"`
+	DueDate      string             `json:"due_date"`
 	StartDate    int64              `json:"start_date"`
 	TimeEstimate int64              `json:"time_estimate"`
 	TimeSpent    int64              `json:"time_spent"`
@@ -100,4 +100,5 @@ type CreateTaskRequest struct {
 	Description string `json:"description,omitempty"`
 	Status      string `json:"status,omitempty"`
 	Assignees   []int  `json:"assignees,omitempty"`
+	DueDate     *int64 `json:"due_date,omitempty"`
 }

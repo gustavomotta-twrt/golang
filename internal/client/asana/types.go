@@ -16,6 +16,7 @@ type AsanaTasks struct {
 	Notes     string     `json:"notes"`
 	Completed bool       `json:"completed"`
 	Assignee  *AsanaUser `json:"assignee"`
+	DueOn     string     `json:"due_on"`
 }
 
 type AsanaDetailError struct {
@@ -33,6 +34,7 @@ type CreateTaskRequest struct {
 	Projects  []string `json:"projects,omitempty"`
 	Completed bool     `json:"completed"`
 	Assignee  string   `json:"assignee,omitempty"`
+	DueOn     string   `json:"due_on,omitempty"`
 }
 
 type CreateTaskRequestWrapper struct {

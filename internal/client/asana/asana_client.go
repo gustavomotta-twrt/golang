@@ -25,8 +25,27 @@ func NewAsanaClient(token string) *AsanaClient {
 	}
 }
 
+func parseDueDate(s string) (*time.Time, error) {
+	if s == "" {
+		return nil, nil
+	}
+	t, err := time.Parse("2006-01-02", s)
+	if err != nil {
+		return nil, fmt.Errorf("parse due_date (asana): %w", err)
+	}
+	utc := time.Date(t.Year(), t.Month(), t.Day(), 12, 0, 0, 0, time.UTC)
+	return &utc, nil
+}
+
+func formatDueDate(t *time.Time) string {
+	if t == nil {
+		return ""
+	}
+	return t.UTC().Format("2006-01-02")
+}
+
 func (c *AsanaClient) GetTasks(projectId string) ([]models.Task, error) {
-	url := c.baseUrl + "/tasks?project=" + projectId + "&opt_fields=name,notes,completed,assignee,assignee.gid,assignee.name,assignee.email"
+	url := c.baseUrl + "/tasks?project=" + projectId + "&opt_fields=name,notes,completed,assignee,assignee.gid,assignee.name,assignee.email,due_on"
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -84,12 +103,17 @@ func (c *AsanaClient) GetTasks(projectId string) ([]models.Task, error) {
 				Email: asanaTask.Assignee.Email,
 			}}
 		}
+		dueDate, err := parseDueDate(asanaTask.DueOn)
+		if err != nil {
+			return nil, err
+		}
 		tasks[i] = models.Task{
 			Id:          asanaTask.Gid,
 			Name:        asanaTask.Name,
 			Description: asanaTask.Notes,
 			Status:      status,
 			Assignees:   assignees,
+			DueDate:     dueDate,
 		}
 	}
 
@@ -106,6 +130,7 @@ func (c *AsanaClient) CreateTask(projectId string, task models.Task) (*models.Ta
 	if len(task.Assignees) > 0 {
 		reqBody.Assignee = task.Assignees[0].ID
 	}
+	reqBody.DueOn = formatDueDate(task.DueDate)
 
 	wrapper := CreateTaskRequestWrapper{
 		Data: reqBody,
