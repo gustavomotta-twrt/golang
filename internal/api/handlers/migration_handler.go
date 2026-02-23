@@ -47,8 +47,8 @@ func (h *MigrationHandler) CreateMigration(w http.ResponseWriter, r *http.Reques
 
 	var reqBody CreateMigrationRequestBody
 	if err := json.Unmarshal(body, &reqBody); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
 		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]string{
 			"error": "JSON error: " + err.Error(),
 		})
@@ -100,8 +100,8 @@ func (h *MigrationHandler) CreateMigration(w http.ResponseWriter, r *http.Reques
 	)
 
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
 		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{
 			"error": "Error trying to start migration: " + err.Error(),
 		})
@@ -121,8 +121,8 @@ func (h *MigrationHandler) GetPendingAssignees(w http.ResponseWriter, r *http.Re
 	idStr := r.PathValue("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
 		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]string{
 			"error": "invalid migration id",
 		})
@@ -131,8 +131,8 @@ func (h *MigrationHandler) GetPendingAssignees(w http.ResponseWriter, r *http.Re
 
 	pending, members, err := h.migrationService.GetPendingAssignees(id)
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
 		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{
 			"error": "Error trying to get pending assignees: " + err.Error(),
 		})
@@ -169,8 +169,8 @@ func (h *MigrationHandler) SubmitAssigneeMappings(w http.ResponseWriter, r *http
 	idStr := r.PathValue("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
 		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]string{
 			"error": "invalid migration id",
 		})
@@ -179,8 +179,8 @@ func (h *MigrationHandler) SubmitAssigneeMappings(w http.ResponseWriter, r *http
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
 		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]string{
 			"error": "Error trying to read the body: " + err.Error(),
 		})
@@ -189,8 +189,8 @@ func (h *MigrationHandler) SubmitAssigneeMappings(w http.ResponseWriter, r *http
 
 	var reqBody SubmitAssigneeMappingsRequestBody
 	if err := json.Unmarshal(body, &reqBody); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
 		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]string{
 			"error": "JSON error: " + err.Error(),
 		})
@@ -198,8 +198,8 @@ func (h *MigrationHandler) SubmitAssigneeMappings(w http.ResponseWriter, r *http
 	}
 
 	if err := h.migrationService.ResumeMigration(id, reqBody.Mappings); err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
 		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{
 			"error": "Error trying to resume migration: " + err.Error(),
 		})
@@ -226,8 +226,8 @@ func (h *MigrationHandler) GetMigration(w http.ResponseWriter, r *http.Request) 
 		})
 		return
 	}
-	w.WriteHeader(http.StatusOK)
 	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"migration": migration,
 	})
@@ -242,8 +242,8 @@ func (h *MigrationHandler) ListMigrations(w http.ResponseWriter, r *http.Request
 		})
 		return
 	}
-	w.WriteHeader(http.StatusOK)
 	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"migrations": migrations,
 	})

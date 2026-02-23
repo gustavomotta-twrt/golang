@@ -26,8 +26,8 @@ func (h *IntegrationHandler) GetAsanaWorkspaces(w http.ResponseWriter, r *http.R
 		})
 		return
 	}
-	w.WriteHeader(http.StatusOK)
 	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"workspaces": workspaces,
 	})
@@ -43,8 +43,8 @@ func (h *IntegrationHandler) GetAsanaProjects(w http.ResponseWriter, r *http.Req
 		})
 		return
 	}
-	w.WriteHeader(http.StatusOK)
 	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"projects": projects,
 	})
@@ -59,8 +59,8 @@ func (h *IntegrationHandler) GetClickupWorkspaces(w http.ResponseWriter, r *http
 		})
 		return
 	}
-	w.WriteHeader(http.StatusOK)
 	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"workspaces": workspaces,
 	})
@@ -76,8 +76,8 @@ func (h *IntegrationHandler) GetClickupSpaces(w http.ResponseWriter, r *http.Req
 		})
 		return
 	}
-	w.WriteHeader(http.StatusOK)
 	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"spaces": spaces,
 	})

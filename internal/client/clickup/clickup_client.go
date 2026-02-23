@@ -117,8 +117,8 @@ func (c *ClickUpClient) CreateTask(listId string, task models.Task) (*models.Tas
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
 
-	req.Header.Set("Authorization", c.token)
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", c.token)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

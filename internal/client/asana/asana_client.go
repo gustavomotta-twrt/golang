@@ -120,8 +120,8 @@ func (c *AsanaClient) CreateTask(projectId string, task models.Task) (*models.Ta
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
 
-	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+c.token)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
