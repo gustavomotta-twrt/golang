@@ -160,7 +160,7 @@ func (h *MigrationHandler) GetPendingAssignees(w http.ResponseWriter, r *http.Re
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"pending_assignees":                pendingResponse,
+		"pending_assignees":             pendingResponse,
 		"available_destination_members": membersResponse,
 	})
 }
@@ -246,6 +246,7 @@ func (h *MigrationHandler) GetMigration(w http.ResponseWriter, r *http.Request) 
 func (h *MigrationHandler) ListMigrations(w http.ResponseWriter, r *http.Request) {
 	migrations, err := h.migrationService.GetMigrations()
 	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{
 			"error": "Error trying to get migrations: " + err.Error(),

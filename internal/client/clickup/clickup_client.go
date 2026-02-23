@@ -116,6 +116,9 @@ func (c *ClickUpClient) CreateTask(listId string, task models.Task) (*models.Tas
 	}
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
+	if err != nil {
+		return nil, fmt.Errorf("build request (clickup): %w", err)
+	}
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", c.token)
@@ -156,8 +159,8 @@ func (c *ClickUpClient) CreateTask(listId string, task models.Task) (*models.Tas
 	}
 
 	result := &models.Task{
-		Id: createdTask.Id,
-		Name: createdTask.Name,
+		Id:     createdTask.Id,
+		Name:   createdTask.Name,
 		Status: createdTask.Status.Status,
 	}
 
@@ -191,24 +194,24 @@ func (c *ClickUpClient) GetWorkspaces() ([]ClickUpTeams, error) {
 		if err := json.Unmarshal(errorBody, &clickupErr); err != nil {
 			return []ClickUpTeams{}, fmt.Errorf("Error trying to parse resp: %w", err)
 		}
-		
+
 		if len(clickupErr.Err) > 0 {
 			return []ClickUpTeams{}, fmt.Errorf("ClickUp error: %s", clickupErr.Err)
 		}
-		
+
 		return []ClickUpTeams{}, fmt.Errorf("API error status: %d", resp.StatusCode)
 	}
-	
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return []ClickUpTeams{}, err
 	}
-	
+
 	var clickupResp GetMultipleWorkspacesResponse
 	if err := json.Unmarshal(body, &clickupResp); err != nil {
 		return []ClickUpTeams{}, err
 	}
-	
+
 	return clickupResp.Teams, nil
 }
 
