@@ -1,0 +1,40 @@
+---
+description: Padrões para clients de integração (Asana/ClickUp)
+globs: internal/client/**/*.go
+alwaysApply: false
+---
+
+# Integration Clients (Strict)
+
+## Do
+
+- Validar erro de `http.NewRequest` antes de usar `req`.
+- Definir headers de autenticação e content-type corretamente.
+- Validar status code esperado por endpoint.
+- Fazer parse de payload de erro quando disponível.
+- Mapear payload externo -> `models` dentro do client.
+- Usar timeout explícito em `http.Client`.
+
+## Don't
+
+- Não vazar token, URL assinada ou body sensível em logs/erros.
+- Não retornar mensagem genérica sem contexto do provider.
+- Não duplicar lógica de tratamento de erro se puder extrair helper.
+
+## Example
+
+```go
+req, err := http.NewRequest(http.MethodGet, url, nil)
+if err != nil {
+return nil, fmt.Errorf("build request (clickup): %w", err)
+}
+req.Header.Set("Authorization", token)
+resp, err := c.httpClient.Do(req)
+```
+
+## Acceptance Checklist
+
+- [ ] NewRequest com erro tratado
+- [ ] Status code validado
+- [ ] resp.Body.Close() garantido
+- [ ] Erro contextualizado por provider

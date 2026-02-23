@@ -1,0 +1,46 @@
+---
+description: Padrões para services e repositories
+globs: internal/service/**/*.go,internal/repository/**/*.go
+alwaysApply: false
+---
+
+# Services and Repositories (Strict)
+
+## Service - Do
+
+- Orquestrar fluxo de negócio e estados da migração.
+- Garantir atualização de status/progresso em sucesso e falha.
+- Retornar erro com contexto do passo que falhou.
+
+## Service - Don't
+
+- Não usar tipos HTTP (`ResponseWriter`, status code, JSON encoder).
+- Não acessar detalhes SQL diretamente.
+
+## Repository - Do
+
+- Usar query parametrizada (`?`) sempre.
+- Fechar `rows` com `defer rows.Close()`.
+- Tratar erro de scan/iteração explicitamente.
+- Manter structs alinhadas ao schema atual.
+
+## Repository - Don't
+
+- Não concatenar input em SQL.
+- Não colocar regra de negócio em método de persistência.
+
+## Example
+
+```go
+row := db.QueryRow("SELECT id, status FROM migrations WHERE id = ?", id)
+if err := row.Scan(&m.ID, &m.Status); err != nil {
+    return Migration{}, fmt.Errorf("get migration: %w", err)
+}
+```
+
+## Acceptance Checklist
+
+- [ ] Service sem acoplamento HTTP
+- [ ] Estado da migração consistente em todos os caminhos
+- [ ] SQL parametrizado
+- [ ] Recursos de DB fechados e erros tratados

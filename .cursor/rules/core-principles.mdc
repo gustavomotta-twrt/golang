@@ -1,0 +1,27 @@
+---
+description: Princípios gerais do integration-mapper
+alwaysApply: true
+---
+
+# Core Principles (Strict)
+
+## Do
+
+- Preserve a arquitetura em camadas: `api -> service -> repository/client`.
+- Faça early return para erros e propague com contexto (`%w`).
+- Prefira mudanças pequenas e testáveis.
+- Mantenha nomenclatura consistente (`NewX`, `GetX`, `CreateX`, `UpdateX`).
+
+## Don't
+
+- Não misture responsabilidades entre camadas.
+- Não introduza dependências desnecessárias.
+- Não exponha segredos/tokens em logs, erros ou respostas HTTP.
+- Não alterar contrato público sem justificar compatibilidade.
+
+## Acceptance Checklist
+
+- [ ] Responsabilidades por camada preservadas
+- [ ] Erros com contexto
+- [ ] Sem vazamento de dados sensíveis
+- [ ] Mudança coberta por teste (ou justificativa)

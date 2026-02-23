@@ -1,0 +1,36 @@
+---
+description: Padrões para handlers HTTP da API
+globs: internal/api/**/*.go
+alwaysApply: false
+---
+
+# API Handlers (Strict)
+
+## Do
+
+- Validar body, params e campos obrigatórios antes de chamar service.
+- Definir `Content-Type` antes de `WriteHeader`.
+- Retornar erros no formato `{"error":"..."}`.
+- Converter erro de domínio em status HTTP apropriado (`400/404/500`).
+- Para processos assíncronos, responder `202` com identificador de rastreio.
+
+## Don't
+
+- Não chamar repository/client diretamente no handler.
+- Não conter regra de negócio no handler.
+- Não retornar erro bruto de provider para o cliente.
+- Não ignorar erro de parse de JSON.
+
+## Example
+
+w.Header().Set("Content-Type", "application/json")
+w.WriteHeader(http.StatusBadRequest)
+\_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid payload"})
+
+## Acceptance Checklist
+
+- [ ] Handler só traduz HTTP <-> Service
+- [ ] Header JSON setado antes do status
+- [ ] Envelope de erro padronizado
+- [ ] Status code coerente com cenário
+
