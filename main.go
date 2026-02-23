@@ -23,7 +23,6 @@ func main() {
 		log.Fatal("Tokens não configurados")
 	}
 
-	// Inicializar banco de dados
 	db, err := repository.InitDB("./migrator.db")
 	if err != nil {
 		log.Fatal("Erro ao inicializar BD:", err)
@@ -32,10 +31,8 @@ func main() {
 
 	fmt.Println("✅ Banco de dados inicializado!")
 
-	// Setup router
 	router := api.SetupRouter(db, asanaToken, clickUpToken)
 
-	// Iniciar servidor HTTP
 	fmt.Println("🚀 Servidor rodando em http://localhost:8080")
 	fmt.Println("📝 Endpoints disponíveis:")
 	fmt.Println("   POST /migrations - Criar migração")
