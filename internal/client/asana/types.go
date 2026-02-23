@@ -1,7 +1,7 @@
 package asana
 
-type AsanaResponse struct {
-	Data []AsanaTasks
+type AsanaResponse[T any] struct {
+	Data []T `json:"data"`
 }
 
 type AsanaTasks struct {
@@ -33,4 +33,16 @@ type CreateTaskRequestWrapper struct {
 
 type CreateTaskResponse struct {
 	Data AsanaTasks `json:"data"`
+}
+
+type GetMultipleWorkspacesResponse struct {
+	Id          string `json:"gid"`
+	ResourceType string `json:"resource_type"`
+	Name         string `json:"name"`
+}
+
+type GetMultipleProjectsResponse struct {
+	Id          string `json:"gid"`
+	ResourceType string `json:"resource_type"`
+	Name         string `json:"name"`
 }

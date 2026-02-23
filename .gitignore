@@ -1,1 +1,36 @@
+# Env e segredos
 .env
+.env.*
+!.env.example
+
+# Banco de dados
+*.db
+*.sqlite
+*.sqlite3
+
+# Go
+/vendor/
+*.exe
+*.test
+*.out
+/bin/
+/dist/
+coverage.out
+coverage.html
+
+# IDE / Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Logs e temporários
+*.log
+/tmp/
+*.tmp

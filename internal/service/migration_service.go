@@ -9,23 +9,23 @@ import (
 )
 
 type MigrationService struct {
-	sourceClient      client.TaskClient
-	destinationClient client.TaskClient
-	migrationRepo     *repository.MigrationRepository
-	taskMappingRepo   *repository.TaskMappingRepository
+	asanaClient     client.TaskClient
+	clickupClient   client.TaskClient
+	migrationRepo   *repository.MigrationRepository
+	taskMappingRepo *repository.TaskMappingRepository
 }
 
 func NewMigrationService(
-	source,
-	destination client.TaskClient,
+	asanaClient,
+	clickupClient client.TaskClient,
 	migrationRepo *repository.MigrationRepository,
 	taskMappingRepo *repository.TaskMappingRepository,
 ) *MigrationService {
 	return &MigrationService{
-		sourceClient:      source,
-		destinationClient: destination,
-		migrationRepo:     migrationRepo,
-		taskMappingRepo:   taskMappingRepo,
+		asanaClient:     asanaClient,
+		clickupClient:   clickupClient,
+		migrationRepo:   migrationRepo,
+		taskMappingRepo: taskMappingRepo,
 	}
 }
 
@@ -39,18 +39,25 @@ func mapStatus(taskStatus string, statusMappings []models.StatusMapping) string 
 }
 
 func (s *MigrationService) executeMigration(
+	sourceClient client.TaskClient,
+	source string,
+	destClient client.TaskClient,
+	destination string,
 	migrationID int64,
 	sourceProjectId string,
 	destListId string,
 	statusMappings []models.StatusMapping,
 	assigneeMappings []models.AssigneeMapping,
 ) {
-	tasks, err := s.sourceClient.GetTasks(sourceProjectId)
+	tasks, err := sourceClient.GetTasks(sourceProjectId)
 	if err != nil {
 		s.migrationRepo.Complete(migrationID, "failed")
 		fmt.Printf("❌ Erro ao buscar tasks: %v\n", err)
 		return
 	}
+
+	fmt.Printf("🚀 Iniciando migração: %s → %s\n", source, destination)
+	fmt.Printf("📋 Total de tasks encontradas: %d\n", len(tasks))
 
 	s.migrationRepo.UpdateTotalTasks(migrationID, len(tasks))
 
@@ -62,11 +69,11 @@ func (s *MigrationService) executeMigration(
 	for _, task := range tasks {
 		fmt.Printf("⏳ Migrando: [%s] %s...\n", task.Id, task.Name)
 
-		fmt.Printf("STATUS ASANA: %s\n", task.Status)
+		originalStatus := task.Status
 		task.Status = mapStatus(task.Status, statusMappings)
-		fmt.Printf("STATUS APÓS MAP: %s\n", task.Status)
+		fmt.Printf("🔄 Status %s: %s → Status %s: %s\n", source, originalStatus, destination, task.Status)
 
-		created, err := s.destinationClient.CreateTask(destListId, task)
+		created, err := destClient.CreateTask(destListId, task)
 		if err != nil {
 			mapping := &repository.TaskMapping{
 				MigrationID:  migrationID,
@@ -101,14 +108,16 @@ func (s *MigrationService) executeMigration(
 }
 
 func (s *MigrationService) StartMigrationAsync(
+	source string,
+	destination string,
 	sourceProjectId string,
 	destListId string,
 	statusMappings []models.StatusMapping,
 	assigneesMappings []models.AssigneeMapping,
 ) (int64, error) {
 	migration := &repository.Migration{
-		Source:          "asana",
-		Destination:     "clickup",
+		Source:          source,
+		Destination:     destination,
 		SourceProjectID: sourceProjectId,
 		DestListID:      destListId,
 		Status:          "pending",
@@ -120,7 +129,16 @@ func (s *MigrationService) StartMigrationAsync(
 		return 0, fmt.Errorf("Error trying to create register inside of DB: %w", err)
 	}
 
-	go s.executeMigration(migrationId, sourceProjectId, destListId, statusMappings, assigneesMappings)
+	var sourceClient, destClient client.TaskClient
+	if source == "clickup" {
+		sourceClient = s.clickupClient
+		destClient = s.asanaClient
+	} else {
+		sourceClient = s.asanaClient
+		destClient = s.clickupClient
+	}
+
+	go s.executeMigration(sourceClient, source, destClient, destination, migrationId, sourceProjectId, destListId, statusMappings, assigneesMappings)
 
 	return migrationId, nil
 }

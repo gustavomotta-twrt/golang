@@ -48,6 +48,8 @@ func (h *MigrationHandler) CreateMigration(w http.ResponseWriter, r *http.Reques
 	}
 
 	migrationId, err := h.migrationService.StartMigrationAsync(
+		reqBody.Source,
+		reqBody.Destination,
 		reqBody.SourceProjectId,
 		reqBody.DestListId,
 		reqBody.StatusMappings,

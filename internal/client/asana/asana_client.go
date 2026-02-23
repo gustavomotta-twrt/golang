@@ -57,7 +57,7 @@ func (c *AsanaClient) GetTasks(projectId string) ([]models.Task, error) {
 			return nil, fmt.Errorf("Asana error: %s", asanaErr.Errors[0].Message)
 		}
 
-		return nil, fmt.Errorf("API error status %d", resp.StatusCode)
+		return nil, fmt.Errorf("API error status: %d", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
@@ -65,7 +65,7 @@ func (c *AsanaClient) GetTasks(projectId string) ([]models.Task, error) {
 		return nil, err
 	}
 
-	var asanaResp AsanaResponse
+	var asanaResp AsanaResponse[AsanaTasks]
 	if err := json.Unmarshal(body, &asanaResp); err != nil {
 		return nil, err
 	}
@@ -123,14 +123,14 @@ func (c *AsanaClient) CreateTask(projectId string, task models.Task) (*models.Ta
 			return nil, fmt.Errorf("Error tryint to read the body: %w", err)
 		}
 
-		var AsanaErr AsanaErrors
+		var asanaErr AsanaErrors
 
-		if err := json.Unmarshal(errorBody, &AsanaErr); err != nil {
+		if err := json.Unmarshal(errorBody, &asanaErr); err != nil {
 			return nil, fmt.Errorf("Error status: %d", resp.StatusCode)
 		}
 
-		if len(AsanaErr.Errors) > 0 {
-			return nil, fmt.Errorf("Asana error: %s", AsanaErr.Errors)
+		if len(asanaErr.Errors) > 0 {
+			return nil, fmt.Errorf("Asana error: %s", asanaErr.Errors[0].Message)
 		}
 
 		return nil, fmt.Errorf("API error status: %d", resp.StatusCode)
@@ -146,7 +146,7 @@ func (c *AsanaClient) CreateTask(projectId string, task models.Task) (*models.Ta
 		return nil, fmt.Errorf("Error trying to parse resp: %w", err)
 	}
 
-	status := "Imcomplete"
+	status := "Incomplete"
 	if createdTaskResp.Data.Completed {
 		status = "Completed"
 	}
@@ -160,4 +160,99 @@ func (c *AsanaClient) CreateTask(projectId string, task models.Task) (*models.Ta
 	}
 
 	return result, nil
+}
+
+func (c *AsanaClient) GetWorkspaces() ([]GetMultipleWorkspacesResponse, error) {
+	url := c.baseUrl + "/workspaces"
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return []GetMultipleWorkspacesResponse{}, err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+c.token)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return []GetMultipleWorkspacesResponse{}, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		errorBody, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return []GetMultipleWorkspacesResponse{}, fmt.Errorf("Error trying to read the body: %w", err)
+		}
+
+		var asanaErr AsanaErrors
+
+		if err := json.Unmarshal(errorBody, &asanaErr); err != nil {
+			return []GetMultipleWorkspacesResponse{}, fmt.Errorf("Error trying to parse resp: %w", err)
+		}
+
+		if len(asanaErr.Errors) > 0 {
+			return []GetMultipleWorkspacesResponse{}, fmt.Errorf("Asana error: %s", asanaErr.Errors[0].Message)
+		}
+
+		return []GetMultipleWorkspacesResponse{}, fmt.Errorf("API error status: %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return []GetMultipleWorkspacesResponse{}, err
+	}
+
+	var asanaResp AsanaResponse[GetMultipleWorkspacesResponse]
+	if err := json.Unmarshal(body, &asanaResp); err != nil {
+		return []GetMultipleWorkspacesResponse{}, err
+	}
+
+	return asanaResp.Data, nil
+}
+
+func (c *AsanaClient) GetProjects(workspaceId string) ([]GetMultipleProjectsResponse, error) {
+	url := c.baseUrl + "/projects?workspace=" + workspaceId
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return []GetMultipleProjectsResponse{}, err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+c.token)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return []GetMultipleProjectsResponse{}, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		errorBody, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return []GetMultipleProjectsResponse{}, fmt.Errorf("Error trying to read the body: %w", err)
+		}
+
+		var asanaErr AsanaErrors
+
+		if err := json.Unmarshal(errorBody, &asanaErr); err != nil {
+			return []GetMultipleProjectsResponse{}, fmt.Errorf("Error trying to parse resp: %w", err)
+		}
+
+		if len(asanaErr.Errors) > 0 {
+			return []GetMultipleProjectsResponse{}, fmt.Errorf("Asana error: %s", asanaErr.Errors[0].Message)
+		}
+		return []GetMultipleProjectsResponse{}, fmt.Errorf("API error status: %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return []GetMultipleProjectsResponse{}, err
+	}
+
+	var asanaResp AsanaResponse[GetMultipleProjectsResponse]
+	if err := json.Unmarshal(body, &asanaResp); err != nil {
+		return []GetMultipleProjectsResponse{}, err
+	}
+
+	return asanaResp.Data, nil
 }

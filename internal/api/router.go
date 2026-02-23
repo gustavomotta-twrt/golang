@@ -2,13 +2,13 @@ package api
 
 import (
 	"database/sql"
-    "net/http"
+	"net/http"
 
-    "github.com/TWRT/integration-mapper/internal/api/handlers"
-    "github.com/TWRT/integration-mapper/internal/client/asana"
-    "github.com/TWRT/integration-mapper/internal/client/clickup"
-    "github.com/TWRT/integration-mapper/internal/repository"
-    "github.com/TWRT/integration-mapper/internal/service"
+	"github.com/TWRT/integration-mapper/internal/api/handlers"
+	"github.com/TWRT/integration-mapper/internal/client/asana"
+	"github.com/TWRT/integration-mapper/internal/client/clickup"
+	"github.com/TWRT/integration-mapper/internal/repository"
+	"github.com/TWRT/integration-mapper/internal/service"
 )
 
 func SetupRouter(db *sql.DB, asanaToken string, clickupToken string) *http.ServeMux {
@@ -27,11 +27,21 @@ func SetupRouter(db *sql.DB, asanaToken string, clickupToken string) *http.Serve
 		taskMappingRepo,
 	)
 
+	integrationService := service.NewIntegrationService(
+		asanaClient,
+		clickUpClient,
+	)
+
 	migrationHandler := handlers.NewMigrationHandler(migrationService)
+	integrationHandler := handlers.NewIntegrationHandler(integrationService)
 
 	mux.HandleFunc("POST /migrations", migrationHandler.CreateMigration)
 	mux.HandleFunc("GET /migrations/{id}", migrationHandler.GetMigration)
 	mux.HandleFunc("GET /migrations", migrationHandler.ListMigrations)
+	mux.HandleFunc("GET /asana/workspaces", integrationHandler.GetAsanaWorkspaces)
+	mux.HandleFunc("GET /asana/workspaces/{id}/projects", integrationHandler.GetAsanaProjects)
+	mux.HandleFunc("GET /clickup/workspaces", integrationHandler.GetClickupWorkspaces)
+	mux.HandleFunc("GET /clickup/workspaces/{id}/spaces", integrationHandler.GetClickupSpaces)
 
 	return mux
 }
