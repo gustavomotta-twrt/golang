@@ -10,13 +10,25 @@ type AsanaUser struct {
 	Email string `json:"email"`
 }
 
+type AsanaCustomFieldEnumValue struct {
+	Gid  string `json:"gid"`
+	Name string `json:"name"`
+}
+
+type AsanaCustomField struct {
+	Gid       string                     `json:"gid"`
+	Name      string                     `json:"name"`
+	EnumValue *AsanaCustomFieldEnumValue `json:"enum_value"`
+}
+
 type AsanaTasks struct {
-	Gid       string     `json:"gid"`
-	Name      string     `json:"name"`
-	Notes     string     `json:"notes"`
-	Completed bool       `json:"completed"`
-	Assignee  *AsanaUser `json:"assignee"`
-	DueOn     string     `json:"due_on"`
+	Gid          string             `json:"gid"`
+	Name         string             `json:"name"`
+	Notes        string             `json:"notes"`
+	Completed    bool               `json:"completed"`
+	Assignee     *AsanaUser         `json:"assignee"`
+	DueOn        string             `json:"due_on"`
+	CustomFields []AsanaCustomField `json:"custom_fields"`
 }
 
 type AsanaDetailError struct {
@@ -46,7 +58,7 @@ type CreateTaskResponse struct {
 }
 
 type GetMultipleWorkspacesResponse struct {
-	Id          string `json:"gid"`
+	Id           string `json:"gid"`
 	ResourceType string `json:"resource_type"`
 	Name         string `json:"name"`
 }

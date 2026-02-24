@@ -6,239 +6,200 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/TWRT/integration-mapper/internal/models"
+	"github.com/TWRT/integration-mapper/internal/repository"
 	"github.com/TWRT/integration-mapper/internal/service"
 )
-
-type CreateMigrationRequestBody struct {
-	Source           string                   `json:"source"`
-	Destination      string                   `json:"destination"`
-	SourceProjectId  string                   `json:"source_project_id"`
-	DestListId       string                   `json:"dest_list_id"`
-	DestWorkspaceId  string                   `json:"dest_workspace_id,omitempty"`
-	StatusMappings   []models.StatusMapping   `json:"status_mappings"`
-	AssigneeMappings []models.AssigneeMapping `json:"assignee_mappings"`
-}
-
-type SubmitAssigneeMappingsRequestBody struct {
-	Mappings []models.AssigneeMapping `json:"mappings"`
-}
 
 type MigrationHandler struct {
 	migrationService *service.MigrationService
 }
 
 func NewMigrationHandler(migrationService *service.MigrationService) *MigrationHandler {
-	return &MigrationHandler{
-		migrationService: migrationService,
-	}
+	return &MigrationHandler{migrationService: migrationService}
+}
+
+type CreateMigrationRequestBody struct {
+	Source          string `json:"source"`
+	Destination     string `json:"destination"`
+	SourceProjectId string `json:"source_project_id"`
+	DestListId      string `json:"dest_list_id"`
+	DestWorkspaceId string `json:"dest_workspace_id"`
+}
+
+type SaveMappingsRequestBody struct {
+	Mappings []struct {
+		Type        string `json:"type"`
+		SourceValue string `json:"source_value"`
+		DestValue   string `json:"dest_value"`
+	} `json:"mappings"`
+}
+
+func writeJSON(w http.ResponseWriter, status int, body any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(body)
+}
+
+func writeError(w http.ResponseWriter, status int, msg string) {
+	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+func parseMigrationID(r *http.Request) (int64, error) {
+	return strconv.ParseInt(r.PathValue("id"), 10, 64)
+}
+
+func readBody(r *http.Request) ([]byte, error) {
+	return io.ReadAll(r.Body)
 }
 
 func (h *MigrationHandler) CreateMigration(w http.ResponseWriter, r *http.Request) {
-	body, err := io.ReadAll(r.Body)
+	body, err := readBody(r)
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error": "Error trying to read the body: " + err.Error(),
-		})
+		writeError(w, http.StatusBadRequest, "error reading body: "+err.Error())
 		return
 	}
 
-	var reqBody CreateMigrationRequestBody
-	if err := json.Unmarshal(body, &reqBody); err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error": "JSON error: " + err.Error(),
-		})
+	var req CreateMigrationRequestBody
+	if err := json.Unmarshal(body, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
 		return
 	}
 
-	if reqBody.Source != "asana" && reqBody.Source != "clickup" {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error": "source must be 'asana' or 'clickup'",
-		})
+	if req.Source != "asana" && req.Source != "clickup" {
+		writeError(w, http.StatusBadRequest, "source must be 'asana' or 'clickup'")
 		return
 	}
-	if reqBody.Destination != "asana" && reqBody.Destination != "clickup" {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error": "destination must be 'asana' or 'clickup'",
-		})
+	if req.Destination != "asana" && req.Destination != "clickup" {
+		writeError(w, http.StatusBadRequest, "destination must be 'asana' or 'clickup'")
 		return
 	}
-
-	if reqBody.Destination == "clickup" && reqBody.DestWorkspaceId == "" {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error": "dest_workspace_id is required when destination is clickup",
-		})
+	if req.Source == req.Destination {
+		writeError(w, http.StatusBadRequest, "source and destination must be different")
 		return
 	}
-	if reqBody.Destination == "asana" && reqBody.DestWorkspaceId == "" {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error": "dest_workspace_id is required when destination is asana",
-		})
+	if req.DestWorkspaceId == "" {
+		writeError(w, http.StatusBadRequest, "dest_workspace_id is required")
 		return
 	}
 
-	migrationId, err := h.migrationService.StartMigrationAsync(
-		reqBody.Source,
-		reqBody.Destination,
-		reqBody.SourceProjectId,
-		reqBody.DestListId,
-		reqBody.DestWorkspaceId,
-		reqBody.StatusMappings,
-		reqBody.AssigneeMappings,
+	migrationID, state, err := h.migrationService.CreateMigration(
+		req.Source,
+		req.Destination,
+		req.SourceProjectId,
+		req.DestListId,
+		req.DestWorkspaceId,
 	)
-
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error": "Error trying to start migration: " + err.Error(),
-		})
+		writeError(w, http.StatusInternalServerError, "error creating migration: "+err.Error())
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusAccepted)
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"migration_id": migrationId,
-		"status":       "pending",
-		"message":      "Migration initiated successfully",
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"migration_id": migrationID,
+		"status":       "pending_configuration",
+		"mappings":     state,
 	})
 }
 
-func (h *MigrationHandler) GetPendingAssignees(w http.ResponseWriter, r *http.Request) {
-	idStr := r.PathValue("id")
-	id, err := strconv.ParseInt(idStr, 10, 64)
+func (h *MigrationHandler) GetMappings(w http.ResponseWriter, r *http.Request) {
+	id, err := parseMigrationID(r)
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error": "invalid migration id",
-		})
+		writeError(w, http.StatusBadRequest, "invalid migration id")
 		return
 	}
 
-	pending, members, err := h.migrationService.GetPendingAssignees(id)
+	state, err := h.migrationService.SyncMappings(id)
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error": "Error trying to get pending assignees: " + err.Error(),
-		})
+		writeError(w, http.StatusInternalServerError, "error syncing mappings: "+err.Error())
 		return
 	}
 
-	pendingResponse := make([]map[string]string, 0, len(pending))
-	for _, p := range pending {
-		pendingResponse = append(pendingResponse, map[string]string{
-			"source_user_id":    p.SourceUserId,
-			"source_user_name":  p.SourceUserName,
-			"source_user_email": p.SourceUserEmail,
-		})
-	}
-
-	membersResponse := make([]map[string]string, 0, len(members))
-	for _, m := range members {
-		membersResponse = append(membersResponse, map[string]string{
-			"id":    m.ID,
-			"name":  m.Name,
-			"email": m.Email,
-		})
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"pending_assignees":             pendingResponse,
-		"available_destination_members": membersResponse,
+	writeJSON(w, http.StatusOK, map[string]any{
+		"mappings": state,
 	})
 }
 
-func (h *MigrationHandler) SubmitAssigneeMappings(w http.ResponseWriter, r *http.Request) {
-	idStr := r.PathValue("id")
-	id, err := strconv.ParseInt(idStr, 10, 64)
+func (h *MigrationHandler) SaveMappings(w http.ResponseWriter, r *http.Request) {
+	id, err := parseMigrationID(r)
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error": "invalid migration id",
-		})
+		writeError(w, http.StatusBadRequest, "invalid migration id")
 		return
 	}
 
-	body, err := io.ReadAll(r.Body)
+	body, err := readBody(r)
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error": "Error trying to read the body: " + err.Error(),
-		})
+		writeError(w, http.StatusBadRequest, "error reading body: "+err.Error())
 		return
 	}
 
-	var reqBody SubmitAssigneeMappingsRequestBody
-	if err := json.Unmarshal(body, &reqBody); err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error": "JSON error: " + err.Error(),
-		})
+	var req SaveMappingsRequestBody
+	if err := json.Unmarshal(body, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
 		return
 	}
 
-	if err := h.migrationService.ResumeMigration(id, reqBody.Mappings); err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error": "Error trying to resume migration: " + err.Error(),
-		})
+	if len(req.Mappings) == 0 {
+		writeError(w, http.StatusBadRequest, "mappings cannot be empty")
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusAccepted)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	inputs := make([]service.MappingInput, 0, len(req.Mappings))
+	for _, m := range req.Mappings {
+		if m.SourceValue == "" || m.DestValue == "" {
+			writeError(w, http.StatusBadRequest, "source_value and dest_value are required")
+			return
+		}
+		inputs = append(inputs, service.MappingInput{
+			Type:        repository.MappingType(m.Type),
+			SourceValue: m.SourceValue,
+			DestValue:   m.DestValue,
+		})
+	}
+
+	state, err := h.migrationService.SaveMappings(id, inputs)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "error saving mappings: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"mappings": state,
+	})
+}
+
+func (h *MigrationHandler) StartMigration(w http.ResponseWriter, r *http.Request) {
+	id, err := parseMigrationID(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid migration id")
+		return
+	}
+
+	if err := h.migrationService.StartMigration(id); err != nil {
+		writeError(w, http.StatusBadRequest, "error starting migration: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusAccepted, map[string]any{
 		"migration_id": id,
 		"status":       "running",
-		"message":      "Migration resumed successfully",
+		"message":      "Migration started successfully",
 	})
 }
 
 func (h *MigrationHandler) GetMigration(w http.ResponseWriter, r *http.Request) {
-	idStr := r.PathValue("id")
-	id, err := strconv.ParseInt(idStr, 10, 64)
+	id, err := parseMigrationID(r)
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error": "invalid migration id",
-		})
+		writeError(w, http.StatusBadRequest, "invalid migration id")
 		return
 	}
 
 	migration, err := h.migrationService.GetMigration(id)
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error": "Error trying to get migration: " + err.Error(),
-		})
+		writeError(w, http.StatusInternalServerError, "error getting migration: "+err.Error())
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+
+	writeJSON(w, http.StatusOK, map[string]any{
 		"migration": migration,
 	})
 }
@@ -246,16 +207,11 @@ func (h *MigrationHandler) GetMigration(w http.ResponseWriter, r *http.Request) 
 func (h *MigrationHandler) ListMigrations(w http.ResponseWriter, r *http.Request) {
 	migrations, err := h.migrationService.GetMigrations()
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error": "Error trying to get migrations: " + err.Error(),
-		})
+		writeError(w, http.StatusInternalServerError, "error listing migrations: "+err.Error())
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+
+	writeJSON(w, http.StatusOK, map[string]any{
 		"migrations": migrations,
 	})
 }

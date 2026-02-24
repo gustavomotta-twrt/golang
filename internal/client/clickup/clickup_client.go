@@ -46,49 +46,59 @@ func timeToMs(t *time.Time) *int64 {
 	return &ms
 }
 
+func priorityStringToInt(p string) *int {
+	m := map[string]int{
+		"urgent": 1,
+		"high":   2,
+		"normal": 3,
+		"low":    4,
+	}
+	if v, ok := m[p]; ok {
+		return &v
+	}
+	return nil
+}
+
 func (c *ClickUpClient) GetTasks(listId string) ([]models.Task, error) {
 	url := c.baseUrl + "/list/" + listId + "/task?include_closed=true"
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("build request (clickup): %w", err)
 	}
 
 	req.Header.Set("Authorization", c.token)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get tasks (clickup): %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		errorBody, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return nil, fmt.Errorf("Error trying to read the body: %w", err)
+			return nil, fmt.Errorf("read error body (clickup): %w", err)
 		}
 
 		var clickupErr ClickUpErrors
-
 		if err := json.Unmarshal(errorBody, &clickupErr); err != nil {
-			return nil, fmt.Errorf("Error status: %d", resp.StatusCode)
+			return nil, fmt.Errorf("error status (clickup): %d", resp.StatusCode)
 		}
-
 		if len(clickupErr.Err) > 0 {
 			return nil, fmt.Errorf("ClickUp error: %s", clickupErr.Err)
 		}
-
 		return nil, fmt.Errorf("API error status %d", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("read response body (clickup): %w", err)
 	}
 
 	var clickUpResp ClickUpTasks
 	if err := json.Unmarshal(body, &clickUpResp); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parse tasks (clickup): %w", err)
 	}
 
 	tasks := make([]models.Task, len(clickUpResp.Tasks))
@@ -101,16 +111,24 @@ func (c *ClickUpClient) GetTasks(listId string) ([]models.Task, error) {
 				Email: a.Email,
 			})
 		}
+
 		dueDate, err := parseClickUpDueDate(clickUpTask.DueDate)
 		if err != nil {
 			return nil, err
 		}
+
+		var priority string
+		if clickUpTask.Priority != nil {
+			priority = clickUpTask.Priority.Priority
+		}
+
 		tasks[i] = models.Task{
 			Id:        clickUpTask.Id,
 			Name:      clickUpTask.Name,
 			Status:    clickUpTask.Status.Status,
 			Assignees: assignees,
 			DueDate:   dueDate,
+			Priority:  priority,
 		}
 	}
 
@@ -126,19 +144,21 @@ func (c *ClickUpClient) CreateTask(listId string, task models.Task) (*models.Tas
 		}
 		assignees = append(assignees, id)
 	}
+
 	reqBody := CreateTaskRequest{
 		Name:        task.Name,
 		Description: task.Description,
 		Status:      task.Status,
 		Assignees:   assignees,
 		DueDate:     timeToMs(task.DueDate),
+		Priority:    priorityStringToInt(task.Priority),
 	}
 
 	url := c.baseUrl + "/list/" + listId + "/task"
 
 	body, err := json.Marshal(reqBody)
 	if err != nil {
-		return nil, fmt.Errorf("Error trying to parse body to Json: %w", err)
+		return nil, fmt.Errorf("marshal create task request (clickup): %w", err)
 	}
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
@@ -151,46 +171,41 @@ func (c *ClickUpClient) CreateTask(listId string, task models.Task) (*models.Tas
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("create task (clickup): %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		errorBody, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return nil, fmt.Errorf("Error trying to read the body: %w", err)
+			return nil, fmt.Errorf("read error body (clickup): %w", err)
 		}
 
 		var clickupErr ClickUpErrors
-
 		if err := json.Unmarshal(errorBody, &clickupErr); err != nil {
-			return nil, fmt.Errorf("Error status: %d", resp.StatusCode)
+			return nil, fmt.Errorf("error status (clickup): %d", resp.StatusCode)
 		}
-
 		if len(clickupErr.Err) > 0 {
 			return nil, fmt.Errorf("ClickUp error: %s", clickupErr.Err)
 		}
-
 		return nil, fmt.Errorf("API error status: %d", resp.StatusCode)
 	}
 
 	responseBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("read response body (clickup): %w", err)
 	}
 
 	var createdTask ClickUpTask
 	if err := json.Unmarshal(responseBody, &createdTask); err != nil {
-		return nil, fmt.Errorf("Error trying to parse resp: %w", err)
+		return nil, fmt.Errorf("parse create task response (clickup): %w", err)
 	}
 
-	result := &models.Task{
+	return &models.Task{
 		Id:     createdTask.Id,
 		Name:   createdTask.Name,
 		Status: createdTask.Status.Status,
-	}
-
-	return result, nil
+	}, nil
 }
 
 func (c *ClickUpClient) GetWorkspaces() ([]ClickUpTeams, error) {
@@ -198,44 +213,41 @@ func (c *ClickUpClient) GetWorkspaces() ([]ClickUpTeams, error) {
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return []ClickUpTeams{}, err
+		return nil, fmt.Errorf("build request (clickup): %w", err)
 	}
 
 	req.Header.Set("Authorization", c.token)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return []ClickUpTeams{}, err
+		return nil, fmt.Errorf("get workspaces (clickup): %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		errorBody, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return []ClickUpTeams{}, fmt.Errorf("Error trying to read the body: %w", err)
+			return nil, fmt.Errorf("read error body (clickup): %w", err)
 		}
 
 		var clickupErr ClickUpErrors
-
 		if err := json.Unmarshal(errorBody, &clickupErr); err != nil {
-			return []ClickUpTeams{}, fmt.Errorf("Error trying to parse resp: %w", err)
+			return nil, fmt.Errorf("error status (clickup): %d", resp.StatusCode)
 		}
-
 		if len(clickupErr.Err) > 0 {
-			return []ClickUpTeams{}, fmt.Errorf("ClickUp error: %s", clickupErr.Err)
+			return nil, fmt.Errorf("ClickUp error: %s", clickupErr.Err)
 		}
-
-		return []ClickUpTeams{}, fmt.Errorf("API error status: %d", resp.StatusCode)
+		return nil, fmt.Errorf("API error status: %d", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return []ClickUpTeams{}, err
+		return nil, fmt.Errorf("read response body (clickup): %w", err)
 	}
 
 	var clickupResp GetMultipleWorkspacesResponse
 	if err := json.Unmarshal(body, &clickupResp); err != nil {
-		return []ClickUpTeams{}, err
+		return nil, fmt.Errorf("parse workspaces (clickup): %w", err)
 	}
 
 	return clickupResp.Teams, nil
@@ -289,7 +301,6 @@ func (c *ClickUpClient) GetSpaces(workspaceId string) ([]ClickUpSpace, error) {
 		if err := json.Unmarshal(errorBody, &clickupErr); err != nil {
 			return nil, fmt.Errorf("parse error response (clickup): %w", err)
 		}
-
 		if clickupErr.Err != "" {
 			return nil, fmt.Errorf("ClickUp error: %s", clickupErr.Err)
 		}

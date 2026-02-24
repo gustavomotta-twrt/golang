@@ -101,4 +101,5 @@ type CreateTaskRequest struct {
 	Status      string `json:"status,omitempty"`
 	Assignees   []int  `json:"assignees,omitempty"`
 	DueDate     *int64 `json:"due_date,omitempty"`
+	Priority    *int   `json:"priority,omitempty"`
 }

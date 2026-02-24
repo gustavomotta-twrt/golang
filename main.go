@@ -33,12 +33,6 @@ func main() {
 
 	router := api.SetupRouter(db, asanaToken, clickUpToken)
 
-	fmt.Println("🚀 Servidor rodando em http://localhost:8080")
-	fmt.Println("📝 Endpoints disponíveis:")
-	fmt.Println("   POST /migrations - Criar migração")
-	fmt.Println("   GET /migrations/:id - Ver status")
-	fmt.Println("   GET /migrations - Listar todas")
-
 	if err := http.ListenAndServe(":8080", router); err != nil {
 		log.Fatal("Erro ao iniciar servidor:", err)
 	}

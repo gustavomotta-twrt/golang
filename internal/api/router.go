@@ -19,7 +19,7 @@ func SetupRouter(db *sql.DB, asanaToken string, clickupToken string) *http.Serve
 
 	migrationRepo := repository.NewMigrationRepository(db)
 	taskMappingRepo := repository.NewTaskMappingRepository(db)
-	pendingAssigneeMappingRepo := repository.NewPendingAssigneeMappingRepository(db)
+	migrationMappingRepo := repository.NewMigrationMappingRepository(db)
 
 	migrationService := service.NewMigrationService(
 		asanaClient,
@@ -28,7 +28,7 @@ func SetupRouter(db *sql.DB, asanaToken string, clickupToken string) *http.Serve
 		clickUpClient,
 		migrationRepo,
 		taskMappingRepo,
-		pendingAssigneeMappingRepo,
+		migrationMappingRepo,
 	)
 
 	integrationService := service.NewIntegrationService(
@@ -39,15 +39,17 @@ func SetupRouter(db *sql.DB, asanaToken string, clickupToken string) *http.Serve
 	migrationHandler := handlers.NewMigrationHandler(migrationService)
 	integrationHandler := handlers.NewIntegrationHandler(integrationService)
 
-	mux.HandleFunc("POST /migrations", migrationHandler.CreateMigration)
+	mux.HandleFunc("POST /migrations/create", migrationHandler.CreateMigration)
+	mux.HandleFunc("GET /migrations/{id}/mappings", migrationHandler.GetMappings)
+	mux.HandleFunc("POST /migrations/{id}/mappings", migrationHandler.SaveMappings)
+	mux.HandleFunc("POST /migrations/{id}/start", migrationHandler.StartMigration)
 	mux.HandleFunc("GET /migrations/{id}", migrationHandler.GetMigration)
 	mux.HandleFunc("GET /migrations", migrationHandler.ListMigrations)
+
 	mux.HandleFunc("GET /asana/workspaces", integrationHandler.GetAsanaWorkspaces)
 	mux.HandleFunc("GET /asana/workspaces/{id}/projects", integrationHandler.GetAsanaProjects)
 	mux.HandleFunc("GET /clickup/workspaces", integrationHandler.GetClickupWorkspaces)
 	mux.HandleFunc("GET /clickup/workspaces/{id}/spaces", integrationHandler.GetClickupSpaces)
-	mux.HandleFunc("GET /migrations/{id}/pending-assignees", migrationHandler.GetPendingAssignees)
-	mux.HandleFunc("POST /migrations/{id}/assignee-mappings", migrationHandler.SubmitAssigneeMappings)
 
 	return mux
 }

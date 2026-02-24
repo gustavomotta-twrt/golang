@@ -45,48 +45,46 @@ func formatDueDate(t *time.Time) string {
 }
 
 func (c *AsanaClient) GetTasks(projectId string) ([]models.Task, error) {
-	url := c.baseUrl + "/tasks?project=" + projectId + "&opt_fields=name,notes,completed,assignee,assignee.gid,assignee.name,assignee.email,due_on"
+	url := c.baseUrl + "/tasks?project=" + projectId +
+		"&opt_fields=name,notes,completed,assignee,assignee.gid,assignee.name,assignee.email,due_on,custom_fields,custom_fields.name,custom_fields.enum_value,custom_fields.enum_value.name"
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("build request (asana): %w", err)
 	}
 
 	req.Header.Set("Authorization", "Bearer "+c.token)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get tasks (asana): %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		errorBody, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return nil, fmt.Errorf("Error trying to read the body: %w", err)
+			return nil, fmt.Errorf("read error body (asana): %w", err)
 		}
 
 		var asanaErr AsanaErrors
-
 		if err := json.Unmarshal(errorBody, &asanaErr); err != nil {
-			return nil, fmt.Errorf("Error status: %d", resp.StatusCode)
+			return nil, fmt.Errorf("error status (asana): %d", resp.StatusCode)
 		}
-
 		if len(asanaErr.Errors) > 0 {
 			return nil, fmt.Errorf("Asana error: %s", asanaErr.Errors[0].Message)
 		}
-
 		return nil, fmt.Errorf("API error status: %d", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("read response body (asana): %w", err)
 	}
 
 	var asanaResp AsanaResponse[AsanaTasks]
 	if err := json.Unmarshal(body, &asanaResp); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parse tasks (asana): %w", err)
 	}
 
 	tasks := make([]models.Task, len(asanaResp.Data))
@@ -95,6 +93,7 @@ func (c *AsanaClient) GetTasks(projectId string) ([]models.Task, error) {
 		if asanaTask.Completed {
 			status = "Completed"
 		}
+
 		var assignees []models.TaskAssignee
 		if asanaTask.Assignee != nil {
 			assignees = []models.TaskAssignee{{
@@ -103,10 +102,20 @@ func (c *AsanaClient) GetTasks(projectId string) ([]models.Task, error) {
 				Email: asanaTask.Assignee.Email,
 			}}
 		}
+
 		dueDate, err := parseDueDate(asanaTask.DueOn)
 		if err != nil {
 			return nil, err
 		}
+
+		var priority string
+		for _, cf := range asanaTask.CustomFields {
+			if cf.Name == "Priority" && cf.EnumValue != nil {
+				priority = cf.EnumValue.Name
+				break
+			}
+		}
+
 		tasks[i] = models.Task{
 			Id:          asanaTask.Gid,
 			Name:        asanaTask.Name,
@@ -114,6 +123,7 @@ func (c *AsanaClient) GetTasks(projectId string) ([]models.Task, error) {
 			Status:      status,
 			Assignees:   assignees,
 			DueDate:     dueDate,
+			Priority:    priority,
 		}
 	}
 
@@ -126,61 +136,61 @@ func (c *AsanaClient) CreateTask(projectId string, task models.Task) (*models.Ta
 		Notes:     task.Description,
 		Completed: task.Status == "Completed",
 		Projects:  []string{projectId},
+		DueOn:     formatDueDate(task.DueDate),
 	}
 	if len(task.Assignees) > 0 {
 		reqBody.Assignee = task.Assignees[0].ID
 	}
-	reqBody.DueOn = formatDueDate(task.DueDate)
 
-	wrapper := CreateTaskRequestWrapper{
-		Data: reqBody,
-	}
+	// TODO: priority no create requer lookup do GID do custom field "Priority"
+	// e do GID da enum option correspondente — ambos variam por workspace/projeto.
+	// Ref: GET /projects/{gid}?opt_fields=custom_fields
 
-	url := c.baseUrl + "/tasks"
+	wrapper := CreateTaskRequestWrapper{Data: reqBody}
 
 	body, err := json.Marshal(wrapper)
 	if err != nil {
-		return nil, fmt.Errorf("Error trying to parse body to Json: %w", err)
+		return nil, fmt.Errorf("marshal create task request (asana): %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
+	req, err := http.NewRequest("POST", c.baseUrl+"/tasks", bytes.NewBuffer(body))
+	if err != nil {
+		return nil, fmt.Errorf("build request (asana): %w", err)
+	}
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.token)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("create task (asana): %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusCreated {
 		errorBody, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return nil, fmt.Errorf("Error tryint to read the body: %w", err)
+			return nil, fmt.Errorf("read error body (asana): %w", err)
 		}
 
 		var asanaErr AsanaErrors
-
 		if err := json.Unmarshal(errorBody, &asanaErr); err != nil {
-			return nil, fmt.Errorf("Error status: %d", resp.StatusCode)
+			return nil, fmt.Errorf("error status (asana): %d", resp.StatusCode)
 		}
-
 		if len(asanaErr.Errors) > 0 {
 			return nil, fmt.Errorf("Asana error: %s", asanaErr.Errors[0].Message)
 		}
-
 		return nil, fmt.Errorf("API error status: %d", resp.StatusCode)
 	}
 
 	responseBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("read response body (asana): %w", err)
 	}
 
 	var createdTaskResp CreateTaskResponse
 	if err := json.Unmarshal(responseBody, &createdTaskResp); err != nil {
-		return nil, fmt.Errorf("Error trying to parse resp: %w", err)
+		return nil, fmt.Errorf("parse create task response (asana): %w", err)
 	}
 
 	status := "Incomplete"
@@ -188,15 +198,13 @@ func (c *AsanaClient) CreateTask(projectId string, task models.Task) (*models.Ta
 		status = "Completed"
 	}
 
-	result := &models.Task{
+	return &models.Task{
 		Id:          createdTaskResp.Data.Gid,
 		Name:        createdTaskResp.Data.Name,
 		Description: createdTaskResp.Data.Notes,
 		Status:      status,
 		Completed:   createdTaskResp.Data.Completed,
-	}
-
-	return result, nil
+	}, nil
 }
 
 func (c *AsanaClient) GetMembers(workspaceId string) ([]models.Member, error) {
@@ -253,44 +261,41 @@ func (c *AsanaClient) GetWorkspaces() ([]GetMultipleWorkspacesResponse, error) {
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return []GetMultipleWorkspacesResponse{}, err
+		return nil, fmt.Errorf("build request (asana): %w", err)
 	}
 
 	req.Header.Set("Authorization", "Bearer "+c.token)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return []GetMultipleWorkspacesResponse{}, err
+		return nil, fmt.Errorf("get workspaces (asana): %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		errorBody, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return []GetMultipleWorkspacesResponse{}, fmt.Errorf("Error trying to read the body: %w", err)
+			return nil, fmt.Errorf("read error body (asana): %w", err)
 		}
 
 		var asanaErr AsanaErrors
-
 		if err := json.Unmarshal(errorBody, &asanaErr); err != nil {
-			return []GetMultipleWorkspacesResponse{}, fmt.Errorf("Error trying to parse resp: %w", err)
+			return nil, fmt.Errorf("error status (asana): %d", resp.StatusCode)
 		}
-
 		if len(asanaErr.Errors) > 0 {
-			return []GetMultipleWorkspacesResponse{}, fmt.Errorf("Asana error: %s", asanaErr.Errors[0].Message)
+			return nil, fmt.Errorf("Asana error: %s", asanaErr.Errors[0].Message)
 		}
-
-		return []GetMultipleWorkspacesResponse{}, fmt.Errorf("API error status: %d", resp.StatusCode)
+		return nil, fmt.Errorf("API error status: %d", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return []GetMultipleWorkspacesResponse{}, err
+		return nil, fmt.Errorf("read response body (asana): %w", err)
 	}
 
 	var asanaResp AsanaResponse[GetMultipleWorkspacesResponse]
 	if err := json.Unmarshal(body, &asanaResp); err != nil {
-		return []GetMultipleWorkspacesResponse{}, err
+		return nil, fmt.Errorf("parse workspaces (asana): %w", err)
 	}
 
 	return asanaResp.Data, nil
@@ -301,43 +306,41 @@ func (c *AsanaClient) GetProjects(workspaceId string) ([]GetMultipleProjectsResp
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return []GetMultipleProjectsResponse{}, err
+		return nil, fmt.Errorf("build request (asana): %w", err)
 	}
 
 	req.Header.Set("Authorization", "Bearer "+c.token)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return []GetMultipleProjectsResponse{}, err
+		return nil, fmt.Errorf("get projects (asana): %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		errorBody, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return []GetMultipleProjectsResponse{}, fmt.Errorf("Error trying to read the body: %w", err)
+			return nil, fmt.Errorf("read error body (asana): %w", err)
 		}
 
 		var asanaErr AsanaErrors
-
 		if err := json.Unmarshal(errorBody, &asanaErr); err != nil {
-			return []GetMultipleProjectsResponse{}, fmt.Errorf("Error trying to parse resp: %w", err)
+			return nil, fmt.Errorf("error status (asana): %d", resp.StatusCode)
 		}
-
 		if len(asanaErr.Errors) > 0 {
-			return []GetMultipleProjectsResponse{}, fmt.Errorf("Asana error: %s", asanaErr.Errors[0].Message)
+			return nil, fmt.Errorf("Asana error: %s", asanaErr.Errors[0].Message)
 		}
-		return []GetMultipleProjectsResponse{}, fmt.Errorf("API error status: %d", resp.StatusCode)
+		return nil, fmt.Errorf("API error status: %d", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return []GetMultipleProjectsResponse{}, err
+		return nil, fmt.Errorf("read response body (asana): %w", err)
 	}
 
 	var asanaResp AsanaResponse[GetMultipleProjectsResponse]
 	if err := json.Unmarshal(body, &asanaResp); err != nil {
-		return []GetMultipleProjectsResponse{}, err
+		return nil, fmt.Errorf("parse projects (asana): %w", err)
 	}
 
 	return asanaResp.Data, nil
