@@ -103,3 +103,16 @@ type CreateTaskRequest struct {
 	DueDate     *int64 `json:"due_date,omitempty"`
 	Priority    *int   `json:"priority,omitempty"`
 }
+
+type ClickUpListStatus struct {
+	Status     string `json:"status"`
+	Color      string `json:"color"`
+	OrderIndex int    `json:"orderindex"`
+	Type       string `json:"type"`
+}
+
+type ClickUpList struct {
+	Id       string              `json:"id"`
+	Name     string              `json:"name"`
+	Statuses []ClickUpListStatus `json:"statuses"`
+}

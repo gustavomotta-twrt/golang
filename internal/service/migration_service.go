@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/TWRT/integration-mapper/internal/client"
 	"github.com/TWRT/integration-mapper/internal/models"
@@ -9,32 +10,23 @@ import (
 )
 
 type MigrationService struct {
-	asanaClient           client.TaskClient
-	clickupClient         client.TaskClient
-	asanaMemberProvider   client.MemberProvider
-	clickupMemberProvider client.MemberProvider
-	migrationRepo         *repository.MigrationRepository
-	taskMappingRepo       *repository.TaskMappingRepository
-	migrationMappingRepo  *repository.MigrationMappingRepository
+	providers            map[string]client.IntegrationProvider
+	migrationRepo        *repository.MigrationRepository
+	taskMappingRepo      *repository.TaskMappingRepository
+	migrationMappingRepo *repository.MigrationMappingRepository
 }
 
 func NewMigrationService(
-	asanaClient client.TaskClient,
-	clickupClient client.TaskClient,
-	asanaMemberProvider client.MemberProvider,
-	clickupMemberProvider client.MemberProvider,
+	providers map[string]client.IntegrationProvider,
 	migrationRepo *repository.MigrationRepository,
 	taskMappingRepo *repository.TaskMappingRepository,
 	migrationMappingRepo *repository.MigrationMappingRepository,
 ) *MigrationService {
 	return &MigrationService{
-		asanaClient:           asanaClient,
-		clickupClient:         clickupClient,
-		asanaMemberProvider:   asanaMemberProvider,
-		clickupMemberProvider: clickupMemberProvider,
-		migrationRepo:         migrationRepo,
-		taskMappingRepo:       taskMappingRepo,
-		migrationMappingRepo:  migrationMappingRepo,
+		providers:            providers,
+		migrationRepo:        migrationRepo,
+		taskMappingRepo:      taskMappingRepo,
+		migrationMappingRepo: migrationMappingRepo,
 	}
 }
 
@@ -51,10 +43,12 @@ type AssigneeMappingItem struct {
 }
 
 type MappingsState struct {
-	Status               []MappingItem
-	Priority             []MappingItem
-	Assignees            []AssigneeMappingItem
-	AvailableDestMembers []models.Member
+	Status                  []MappingItem
+	Priority                []MappingItem
+	Assignees               []AssigneeMappingItem
+	AvailableDestMembers    []models.Member
+	AvailableDestStatuses   []string
+	AvailableDestPriorities []string
 }
 
 type MappingInput struct {
@@ -63,28 +57,61 @@ type MappingInput struct {
 	DestValue   string
 }
 
-func (s *MigrationService) getClients(source, destination string) (sourceClient, destClient client.TaskClient) {
-	if source == "clickup" {
-		sourceClient = s.clickupClient
-	} else {
-		sourceClient = s.asanaClient
+func (s *MigrationService) getProvider(name string) (client.IntegrationProvider, error) {
+	p, ok := s.providers[name]
+	if !ok {
+		return nil, fmt.Errorf("unknown provider: %s", name)
 	}
-	if destination == "clickup" {
-		destClient = s.clickupClient
-	} else {
-		destClient = s.asanaClient
-	}
-	return
+	return p, nil
 }
 
 func (s *MigrationService) getMembersForDestination(destination, destWorkspaceId string) ([]models.Member, error) {
 	if destWorkspaceId == "" {
 		return nil, fmt.Errorf("dest_workspace_id is required for destination %s", destination)
 	}
-	if destination == "clickup" {
-		return s.clickupMemberProvider.GetMembers(destWorkspaceId)
+	p, err := s.getProvider(destination)
+	if err != nil {
+		return nil, err
 	}
-	return s.asanaMemberProvider.GetMembers(destWorkspaceId)
+	return p.GetMembers(destWorkspaceId)
+}
+
+func (s *MigrationService) getAvailableDestStatuses(destination, destListId string) ([]string, error) {
+	p, err := s.getProvider(destination)
+	if err != nil {
+		return nil, err
+	}
+	return p.GetListStatuses(destListId)
+}
+
+func (s *MigrationService) getAvailableDestPrioritiesForState(destination, destListID string) []string {
+	provider, err := s.getProvider(destination)
+	if err != nil {
+		return getAvailableDestPriorities(destination)
+	}
+	lookup, ok := provider.(client.PriorityLookup)
+	if !ok {
+		return getAvailableDestPriorities(destination)
+	}
+	options, err := lookup.GetProjectCustomFieldOptions(destListID)
+	if err != nil || len(options) == 0 {
+		return getAvailableDestPriorities(destination)
+	}
+	names := make([]string, 0, len(options))
+	for k := range options {
+		if k != "__field_gid__" {
+			names = append(names, k)
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
+func getAvailableDestPriorities(destination string) []string {
+	if destination == "clickup" {
+		return []string{"urgent", "high", "normal", "low"}
+	}
+	return []string{"High", "Medium", "Low"}
 }
 
 func mapStatus(taskStatus string, mappings []MappingItem) string {
@@ -178,8 +205,17 @@ func (s *MigrationService) buildMappingsState(migration repository.Migration) (*
 		return nil, fmt.Errorf("get destination members: %w", err)
 	}
 
+	destStatuses, err := s.getAvailableDestStatuses(migration.Destination, migration.DestListID)
+	if err != nil {
+		return nil, fmt.Errorf("get destination statuses: %w", err)
+	}
+
+	destPriorities := s.getAvailableDestPrioritiesForState(migration.Destination, migration.DestListID)
+
 	state := &MappingsState{
-		AvailableDestMembers: destMembers,
+		AvailableDestMembers:    destMembers,
+		AvailableDestStatuses:   destStatuses,
+		AvailableDestPriorities: destPriorities,
 	}
 
 	for _, m := range allMappings {
@@ -223,9 +259,11 @@ func (s *MigrationService) CreateMigration(
 		return 0, nil, fmt.Errorf("create migration: %w", err)
 	}
 
-	sourceClient, _ := s.getClients(source, destination)
-
-	if _, err := s.discoverAndUpsertMappings(migrationID, sourceClient, sourceProjectId); err != nil {
+	sourceProvider, err := s.getProvider(source)
+	if err != nil {
+		return 0, nil, fmt.Errorf("get source provider: %w", err)
+	}
+	if _, err := s.discoverAndUpsertMappings(migrationID, sourceProvider, sourceProjectId); err != nil {
 		return 0, nil, fmt.Errorf("discover mappings: %w", err)
 	}
 
@@ -244,9 +282,11 @@ func (s *MigrationService) SyncMappings(migrationID int64) (*MappingsState, erro
 		return nil, fmt.Errorf("get migration: %w", err)
 	}
 
-	sourceClient, _ := s.getClients(migration.Source, migration.Destination)
-
-	if _, err := s.discoverAndUpsertMappings(migrationID, sourceClient, migration.SourceProjectID); err != nil {
+	sourceProvider, err := s.getProvider(migration.Source)
+	if err != nil {
+		return nil, fmt.Errorf("get source provider: %w", err)
+	}
+	if _, err := s.discoverAndUpsertMappings(migrationID, sourceProvider, migration.SourceProjectID); err != nil {
 		return nil, fmt.Errorf("sync mappings: %w", err)
 	}
 
@@ -267,6 +307,20 @@ func (s *MigrationService) SaveMappings(migrationID int64, mappings []MappingInp
 		}
 	}
 
+	allMapped, err := s.migrationMappingRepo.AllMapped(migrationID)
+	if err != nil {
+		return nil, fmt.Errorf("check all mapped: %w", err)
+	}
+	if allMapped {
+		if err := s.migrationRepo.UpdateStatus(migrationID, "ready_to_start"); err != nil {
+			return nil, fmt.Errorf("update migration status: %w", err)
+		}
+	} else {
+		if err := s.migrationRepo.UpdateStatus(migrationID, "pending_configuration"); err != nil {
+			return nil, fmt.Errorf("update migration status: %w", err)
+		}
+	}
+
 	return s.buildMappingsState(migration)
 }
 
@@ -284,13 +338,19 @@ func (s *MigrationService) StartMigration(migrationID int64) error {
 		return fmt.Errorf("get migration: %w", err)
 	}
 
-	sourceClient, destClient := s.getClients(migration.Source, migration.Destination)
-
+	sourceProvider, err := s.getProvider(migration.Source)
+	if err != nil {
+		return fmt.Errorf("get source provider: %w", err)
+	}
+	destProvider, err := s.getProvider(migration.Destination)
+	if err != nil {
+		return fmt.Errorf("get destination provider: %w", err)
+	}
 	if err := s.migrationRepo.UpdateStatus(migrationID, "running"); err != nil {
 		return fmt.Errorf("update migration status: %w", err)
 	}
 
-	go s.executeMigration(sourceClient, destClient, migration)
+	go s.executeMigration(sourceProvider, destProvider, migration)
 
 	return nil
 }
@@ -343,11 +403,32 @@ func (s *MigrationService) executeMigration(
 	successCount := 0
 	failCount := 0
 
+	priorityOptions := map[string]string{}
+	if lookup, ok := destClient.(client.PriorityLookup); ok {
+		options, err := lookup.GetProjectCustomFieldOptions(migration.DestListID)
+		if err != nil {
+			s.migrationRepo.Complete(migration.Id, "failed")
+			fmt.Printf("❌ Erro ao buscar priority options: %v\n", err)
+			return
+		}
+		priorityOptions = options
+	}
+
 	for _, task := range tasks {
 		fmt.Printf("⏳ Migrando: [%s] %s...\n", task.Id, task.Name)
 
 		task.Status = mapStatus(task.Status, statusMappings)
 		task.Priority = mapPriority(task.Priority, priorityMappings)
+
+		if task.Priority != "" && len(priorityOptions) > 0 {
+			fieldGid := priorityOptions["__field_gid__"]
+			optionGid := priorityOptions[task.Priority]
+			if fieldGid != "" && optionGid != "" {
+				task.Priority = fieldGid + ":" + optionGid
+			} else {
+				task.Priority = ""
+			}
+		}
 
 		destAssignees := make([]models.TaskAssignee, 0, len(task.Assignees))
 		for _, a := range task.Assignees {

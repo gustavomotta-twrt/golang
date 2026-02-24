@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/TWRT/integration-mapper/internal/api/handlers"
+	"github.com/TWRT/integration-mapper/internal/client"
 	"github.com/TWRT/integration-mapper/internal/client/asana"
 	"github.com/TWRT/integration-mapper/internal/client/clickup"
 	"github.com/TWRT/integration-mapper/internal/repository"
@@ -21,11 +22,12 @@ func SetupRouter(db *sql.DB, asanaToken string, clickupToken string) *http.Serve
 	taskMappingRepo := repository.NewTaskMappingRepository(db)
 	migrationMappingRepo := repository.NewMigrationMappingRepository(db)
 
+	providers := map[string]client.IntegrationProvider{
+		"asana":   asanaClient,
+		"clickup": clickUpClient,
+	}
 	migrationService := service.NewMigrationService(
-		asanaClient,
-		clickUpClient,
-		asanaClient,
-		clickUpClient,
+		providers,
 		migrationRepo,
 		taskMappingRepo,
 		migrationMappingRepo,

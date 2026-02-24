@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/TWRT/integration-mapper/internal/models"
@@ -138,13 +139,19 @@ func (c *AsanaClient) CreateTask(projectId string, task models.Task) (*models.Ta
 		Projects:  []string{projectId},
 		DueOn:     formatDueDate(task.DueDate),
 	}
+
 	if len(task.Assignees) > 0 {
 		reqBody.Assignee = task.Assignees[0].ID
 	}
 
-	// TODO: priority no create requer lookup do GID do custom field "Priority"
-	// e do GID da enum option correspondente — ambos variam por workspace/projeto.
-	// Ref: GET /projects/{gid}?opt_fields=custom_fields
+	if task.Priority != "" {
+		parts := strings.SplitN(task.Priority, ":", 2)
+		if len(parts) == 2 {
+			reqBody.CustomFields = map[string]string{
+				parts[0]: parts[1],
+			}
+		}
+	}
 
 	wrapper := CreateTaskRequestWrapper{Data: reqBody}
 
@@ -172,7 +179,6 @@ func (c *AsanaClient) CreateTask(projectId string, task models.Task) (*models.Ta
 		if err != nil {
 			return nil, fmt.Errorf("read error body (asana): %w", err)
 		}
-
 		var asanaErr AsanaErrors
 		if err := json.Unmarshal(errorBody, &asanaErr); err != nil {
 			return nil, fmt.Errorf("error status (asana): %d", resp.StatusCode)
@@ -344,4 +350,63 @@ func (c *AsanaClient) GetProjects(workspaceId string) ([]GetMultipleProjectsResp
 	}
 
 	return asanaResp.Data, nil
+}
+
+// TODO: Asana suporta status customizados via seções do projeto — implementar futuramente.
+func (c *AsanaClient) GetListStatuses(listId string) ([]string, error) {
+	return []string{"Incomplete", "Completed"}, nil
+}
+
+func (c *AsanaClient) GetProjectCustomFieldOptions(projectGid string) (map[string]string, error) {
+	url := c.baseUrl + "/projects/" + projectGid + "/custom_field_settings" +
+		"?opt_fields=custom_field.name,custom_field.gid,custom_field.enum_options,custom_field.enum_options.name,custom_field.enum_options.gid"
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build request (asana): %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+c.token)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("get project custom field settings (asana): %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		errorBody, _ := io.ReadAll(resp.Body)
+		var asanaErr AsanaErrors
+		if err := json.Unmarshal(errorBody, &asanaErr); err != nil {
+			return nil, fmt.Errorf("error status (asana): %d", resp.StatusCode)
+		}
+		if len(asanaErr.Errors) > 0 {
+			return nil, fmt.Errorf("Asana error: %s", asanaErr.Errors[0].Message)
+		}
+		return nil, fmt.Errorf("API error status: %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read response body (asana): %w", err)
+	}
+
+	var settingsResp AsanaResponse[AsanaCustomFieldSetting]
+	if err := json.Unmarshal(body, &settingsResp); err != nil {
+		return nil, fmt.Errorf("parse custom field settings (asana): %w", err)
+	}
+
+	for _, s := range settingsResp.Data {
+		if s.CustomField.Name == "Priority" {
+			cf := s.CustomField
+			optionMap := make(map[string]string, len(cf.EnumOptions)+1)
+			optionMap["__field_gid__"] = cf.Gid
+			for _, opt := range cf.EnumOptions {
+				optionMap[opt.Name] = opt.Gid
+			}
+			return optionMap, nil
+		}
+	}
+
+	return map[string]string{}, nil
 }

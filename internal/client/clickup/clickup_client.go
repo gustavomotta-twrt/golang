@@ -319,3 +319,52 @@ func (c *ClickUpClient) GetSpaces(workspaceId string) ([]ClickUpSpace, error) {
 
 	return clickupResp.Spaces, nil
 }
+
+func (c *ClickUpClient) GetListStatuses(listId string) ([]string, error) {
+	url := c.baseUrl + "/list/" + listId
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build request (clickup): %w", err)
+	}
+
+	req.Header.Set("Authorization", c.token)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("get list (clickup): %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		errorBody, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("read error body (clickup): %w", err)
+		}
+
+		var clickupErr ClickUpErrors
+		if err := json.Unmarshal(errorBody, &clickupErr); err != nil {
+			return nil, fmt.Errorf("error status (clickup): %d", resp.StatusCode)
+		}
+		if clickupErr.Err != "" {
+			return nil, fmt.Errorf("ClickUp error: %s", clickupErr.Err)
+		}
+		return nil, fmt.Errorf("API error status %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read response body (clickup): %w", err)
+	}
+
+	var list ClickUpList
+	if err := json.Unmarshal(body, &list); err != nil {
+		return nil, fmt.Errorf("parse list (clickup): %w", err)
+	}
+
+	statuses := make([]string, 0, len(list.Statuses))
+	for _, s := range list.Statuses {
+		statuses = append(statuses, s.Status)
+	}
+	return statuses, nil
+}

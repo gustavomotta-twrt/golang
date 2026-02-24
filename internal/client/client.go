@@ -11,7 +11,16 @@ type MemberProvider interface {
 	GetMembers(workspaceId string) ([]models.Member, error)
 }
 
-type MigrationClient interface {
+type StatusProvider interface {
+	GetListStatuses(listId string) ([]string, error)
+}
+
+type PriorityLookup interface {
+	GetProjectCustomFieldOptions(projectGid string) (map[string]string, error)
+}
+
+type IntegrationProvider interface {
 	TaskClient
 	MemberProvider
+	StatusProvider
 }
