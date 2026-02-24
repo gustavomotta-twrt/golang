@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"log/slog"
 	"sort"
 
 	"github.com/TWRT/integration-mapper/internal/client"
@@ -363,7 +364,7 @@ func (s *MigrationService) executeMigration(
 	tasks, err := sourceClient.GetTasks(migration.SourceProjectID)
 	if err != nil {
 		s.migrationRepo.Complete(migration.Id, "failed")
-		fmt.Printf("Erro ao buscar tasks: %v\n", err)
+		slog.Error("failed to fetch tasks", "migration_id", migration.Id, "error", err)
 		return
 	}
 
@@ -372,7 +373,7 @@ func (s *MigrationService) executeMigration(
 	allMappings, err := s.migrationMappingRepo.GetByMigrationID(migration.Id, nil)
 	if err != nil {
 		s.migrationRepo.Complete(migration.Id, "failed")
-		fmt.Printf("Erro ao carregar mapeamentos: %v\n", err)
+		slog.Error("failed to load mappings", "migration_id", migration.Id, "error", err)
 		return
 	}
 
@@ -397,8 +398,12 @@ func (s *MigrationService) executeMigration(
 		}
 	}
 
-	fmt.Printf("🚀 Iniciando migração: %s → %s\n", migration.Source, migration.Destination)
-	fmt.Printf("📋 Total de tasks: %d\n", len(tasks))
+	slog.Info("starting migration",
+		"migration_id", migration.Id,
+		"source", migration.Source,
+		"destination", migration.Destination,
+		"total_tasks", len(tasks),
+	)
 
 	successCount := 0
 	failCount := 0
@@ -408,14 +413,14 @@ func (s *MigrationService) executeMigration(
 		options, err := lookup.GetProjectCustomFieldOptions(migration.DestListID)
 		if err != nil {
 			s.migrationRepo.Complete(migration.Id, "failed")
-			fmt.Printf("❌ Erro ao buscar priority options: %v\n", err)
+			slog.Error("failed to fetch priority options", "migration_id", migration.Id, "error", err)
 			return
 		}
 		priorityOptions = options
 	}
 
 	for _, task := range tasks {
-		fmt.Printf("⏳ Migrando: [%s] %s...\n", task.Id, task.Name)
+		slog.Info("migrating task", "migration_id", migration.Id, "task_id", task.Id, "task_name", task.Name)
 
 		task.Status = mapStatus(task.Status, statusMappings)
 		task.Priority = mapPriority(task.Priority, priorityMappings)
@@ -446,7 +451,7 @@ func (s *MigrationService) executeMigration(
 				Status:       "failed",
 				ErrorMessage: err.Error(),
 			})
-			fmt.Printf("❌ Erro ao migrar task %s: %v\n", task.Name, err)
+			slog.Error("failed to migrate task", "migration_id", migration.Id, "task_name", task.Name, "error", err)
 			failCount++
 			s.migrationRepo.UpdateProgress(migration.Id, successCount, failCount)
 			continue
@@ -458,7 +463,7 @@ func (s *MigrationService) executeMigration(
 			DestTaskID:   created.Id,
 			Status:       "success",
 		})
-		fmt.Printf("✅ Migrada! ID destino: %s\n", created.Id)
+		slog.Info("task migrated", "migration_id", migration.Id, "dest_task_id", created.Id)
 		successCount++
 		s.migrationRepo.UpdateProgress(migration.Id, successCount, failCount)
 	}

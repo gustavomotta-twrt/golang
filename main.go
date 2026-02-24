@@ -1,8 +1,8 @@
 package main
 
 import (
-	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 
@@ -29,7 +29,7 @@ func main() {
 	}
 	defer db.Close()
 
-	fmt.Println("✅ Banco de dados inicializado!")
+	slog.Info("database initialized")
 
 	router := api.SetupRouter(db, asanaToken, clickUpToken)
 
