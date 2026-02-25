@@ -116,3 +116,7 @@ type ClickUpList struct {
 	Name     string              `json:"name"`
 	Statuses []ClickUpListStatus `json:"statuses"`
 }
+
+type GetMultipleListsResponse struct {
+	Lists []ClickUpList `json:"lists"`
+}

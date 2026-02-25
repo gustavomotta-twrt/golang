@@ -82,3 +82,20 @@ func (h *IntegrationHandler) GetClickupSpaces(w http.ResponseWriter, r *http.Req
 		"spaces": spaces,
 	})
 }
+
+func (h *IntegrationHandler) GetClickupLists(w http.ResponseWriter, r *http.Request) {
+	spaceId := r.PathValue("id")
+	lists, err := h.integrationService.GetClickupLists(spaceId)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Error trying to get ClickUp lists: " + err.Error(),
+		})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"lists": lists,
+	})
+}

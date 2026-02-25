@@ -35,3 +35,7 @@ func (s *IntegrationService) GetClickupWorkspaces() ([]clickup.ClickUpTeams, err
 func (s *IntegrationService) GetClickupSpaces(workspaceId string) ([]clickup.ClickUpSpace, error) {
 	return s.clickupClient.GetSpaces(workspaceId)
 }
+
+func (s *IntegrationService) GetClickupLists(spaceId string) ([]clickup.ClickUpList, error) {
+	return s.clickupClient.GetLists(spaceId)
+}
