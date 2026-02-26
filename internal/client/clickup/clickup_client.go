@@ -122,6 +122,11 @@ func (c *ClickUpClient) GetTasks(listId string) ([]models.Task, error) {
 			priority = clickUpTask.Priority.Priority
 		}
 
+		tags := make([]string, 0, len(clickUpTask.Tags))
+		for _, t := range clickUpTask.Tags {
+			tags = append(tags, t.Name)
+		}
+
 		tasks[i] = models.Task{
 			Id:          clickUpTask.Id,
 			Name:        clickUpTask.Name,
@@ -130,13 +135,14 @@ func (c *ClickUpClient) GetTasks(listId string) ([]models.Task, error) {
 			Assignees:   assignees,
 			DueDate:     dueDate,
 			Priority:    priority,
+			Tags:        tags,
 		}
 	}
 
 	return tasks, nil
 }
 
-func (c *ClickUpClient) CreateTask(listId string, task models.Task) (*models.Task, error) {
+func (c *ClickUpClient) CreateTask(listId string, _ string, task models.Task) (*models.Task, error) {
 	assignees := make([]int, 0, len(task.Assignees))
 	for _, a := range task.Assignees {
 		id, err := strconv.Atoi(a.ID)
@@ -153,6 +159,7 @@ func (c *ClickUpClient) CreateTask(listId string, task models.Task) (*models.Tas
 		Assignees:   assignees,
 		DueDate:     timeToMs(task.DueDate),
 		Priority:    priorityStringToInt(task.Priority),
+		Tags:        task.Tags,
 	}
 
 	url := c.baseUrl + "/list/" + listId + "/task"

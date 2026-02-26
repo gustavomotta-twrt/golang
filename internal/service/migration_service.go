@@ -443,7 +443,7 @@ func (s *MigrationService) executeMigration(
 		}
 		task.Assignees = destAssignees
 
-		created, err := destClient.CreateTask(migration.DestListID, task)
+		created, err := destClient.CreateTask(migration.DestListID, migration.DestWorkspaceID, task)
 		if err != nil {
 			s.taskMappingRepo.Create(&repository.TaskMapping{
 				MigrationID:  migration.Id,

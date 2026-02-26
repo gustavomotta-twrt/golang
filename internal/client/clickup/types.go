@@ -80,6 +80,10 @@ type ClickUpPriority struct {
 	Priority   string `json:"priority"`
 }
 
+type ClickUpTag struct {
+	Name string `json:"name"`
+}
+
 type ClickUpTask struct {
 	Id           string             `json:"id"`
 	Name         string             `json:"name"`
@@ -96,15 +100,17 @@ type ClickUpTask struct {
 	StartDate    int64              `json:"start_date"`
 	TimeEstimate int64              `json:"time_estimate"`
 	TimeSpent    int64              `json:"time_spent"`
+	Tags         []ClickUpTag       `json:"tags"`
 }
 
 type CreateTaskRequest struct {
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
-	Status      string `json:"status,omitempty"`
-	Assignees   []int  `json:"assignees,omitempty"`
-	DueDate     *int64 `json:"due_date,omitempty"`
-	Priority    *int   `json:"priority,omitempty"`
+	Name        string   `json:"name"`
+	Description string   `json:"description,omitempty"`
+	Status      string   `json:"status,omitempty"`
+	Assignees   []int    `json:"assignees,omitempty"`
+	DueDate     *int64   `json:"due_date,omitempty"`
+	Priority    *int     `json:"priority,omitempty"`
+	Tags        []string `json:"tags,omitempty"`
 }
 
 type ClickUpListStatus struct {

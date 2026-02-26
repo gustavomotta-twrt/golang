@@ -47,7 +47,7 @@ func formatDueDate(t *time.Time) string {
 
 func (c *AsanaClient) GetTasks(projectId string) ([]models.Task, error) {
 	url := c.baseUrl + "/tasks?project=" + projectId +
-		"&opt_fields=name,notes,completed,assignee,assignee.gid,assignee.name,assignee.email,due_on,custom_fields,custom_fields.name,custom_fields.enum_value,custom_fields.enum_value.name"
+		"&opt_fields=name,notes,completed,assignee,assignee.gid,assignee.name,assignee.email,due_on,custom_fields,custom_fields.name,custom_fields.enum_value,custom_fields.enum_value.name,tags,tags.name"
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -117,6 +117,11 @@ func (c *AsanaClient) GetTasks(projectId string) ([]models.Task, error) {
 			}
 		}
 
+		tags := make([]string, 0, len(asanaTask.Tags))
+		for _, t := range asanaTask.Tags {
+			tags = append(tags, t.Name)
+		}
+
 		tasks[i] = models.Task{
 			Id:          asanaTask.Gid,
 			Name:        asanaTask.Name,
@@ -125,13 +130,14 @@ func (c *AsanaClient) GetTasks(projectId string) ([]models.Task, error) {
 			Assignees:   assignees,
 			DueDate:     dueDate,
 			Priority:    priority,
+			Tags:        tags,
 		}
 	}
 
 	return tasks, nil
 }
 
-func (c *AsanaClient) CreateTask(projectId string, task models.Task) (*models.Task, error) {
+func (c *AsanaClient) CreateTask(projectId string, workspaceId string, task models.Task) (*models.Task, error) {
 	reqBody := CreateTaskRequest{
 		Name:      task.Name,
 		Notes:     task.Description,
@@ -151,6 +157,27 @@ func (c *AsanaClient) CreateTask(projectId string, task models.Task) (*models.Ta
 				parts[0]: parts[1],
 			}
 		}
+	}
+
+	if len(task.Tags) > 0 && workspaceId != "" {
+		existingTags, err := c.GetTagsForWorkspace(workspaceId)
+		if err != nil {
+			return nil, fmt.Errorf("get workspace tags for resolution (asana): %w", err)
+		}
+
+		tagGids := make([]string, 0, len(task.Tags))
+		for _, tagName := range task.Tags {
+			gid, ok := existingTags[strings.ToLower(tagName)]
+			if !ok {
+				newGid, err := c.CreateTag(workspaceId, tagName)
+				if err != nil {
+					return nil, fmt.Errorf("create tag %q (asana): %w", tagName, err)
+				}
+				gid = newGid
+			}
+			tagGids = append(tagGids, gid)
+		}
+		reqBody.Tags = tagGids
 	}
 
 	wrapper := CreateTaskRequestWrapper{Data: reqBody}
@@ -350,6 +377,121 @@ func (c *AsanaClient) GetProjects(workspaceId string) ([]GetMultipleProjectsResp
 	}
 
 	return asanaResp.Data, nil
+}
+
+func (c *AsanaClient) GetTagsForWorkspace(workspaceId string) (map[string]string, error) {
+	tagMap := make(map[string]string)
+	offset := ""
+
+	for {
+		url := c.baseUrl + "/tags?workspace=" + workspaceId + "&opt_fields=name&limit=100"
+		if offset != "" {
+			url += "&offset=" + offset
+		}
+
+		req, err := http.NewRequest("GET", url, nil)
+		if err != nil {
+			return nil, fmt.Errorf("build request (asana tags): %w", err)
+		}
+
+		req.Header.Set("Authorization", "Bearer "+c.token)
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("get tags (asana): %w", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			errorBody, _ := io.ReadAll(resp.Body)
+			var asanaErr AsanaErrors
+			if err := json.Unmarshal(errorBody, &asanaErr); err != nil {
+				return nil, fmt.Errorf("error status (asana tags): %d", resp.StatusCode)
+			}
+			if len(asanaErr.Errors) > 0 {
+				return nil, fmt.Errorf("Asana error: %s", asanaErr.Errors[0].Message)
+			}
+			return nil, fmt.Errorf("API error status: %d", resp.StatusCode)
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("read response body (asana tags): %w", err)
+		}
+
+		var result struct {
+			Data     []AsanaTag `json:"data"`
+			NextPage *struct {
+				Offset string `json:"offset"`
+			} `json:"next_page"`
+		}
+		if err := json.Unmarshal(body, &result); err != nil {
+			return nil, fmt.Errorf("parse tags (asana): %w", err)
+		}
+
+		for _, tag := range result.Data {
+			tagMap[strings.ToLower(tag.Name)] = tag.Gid
+		}
+
+		if result.NextPage == nil || result.NextPage.Offset == "" {
+			break
+		}
+		offset = result.NextPage.Offset
+	}
+
+	return tagMap, nil
+}
+
+func (c *AsanaClient) CreateTag(workspaceId, name string) (string, error) {
+	wrapper := CreateTagRequestWrapper{
+		Data: CreateTagRequest{
+			Name:      name,
+			Workspace: workspaceId,
+		},
+	}
+
+	body, err := json.Marshal(wrapper)
+	if err != nil {
+		return "", fmt.Errorf("marshal create tag request (asana): %w", err)
+	}
+
+	req, err := http.NewRequest("POST", c.baseUrl+"/tags", bytes.NewBuffer(body))
+	if err != nil {
+		return "", fmt.Errorf("build request (asana create tag): %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+c.token)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("create tag (asana): %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		errorBody, _ := io.ReadAll(resp.Body)
+		var asanaErr AsanaErrors
+		if err := json.Unmarshal(errorBody, &asanaErr); err != nil {
+			return "", fmt.Errorf("error status (asana create tag): %d", resp.StatusCode)
+		}
+		if len(asanaErr.Errors) > 0 {
+			return "", fmt.Errorf("Asana error: %s", asanaErr.Errors[0].Message)
+		}
+		return "", fmt.Errorf("API error status: %d", resp.StatusCode)
+	}
+
+	responseBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("read response body (asana create tag): %w", err)
+	}
+
+	var result CreateTagResponse
+	if err := json.Unmarshal(responseBody, &result); err != nil {
+		return "", fmt.Errorf("parse create tag response (asana): %w", err)
+	}
+
+	return result.Data.Gid, nil
 }
 
 // TODO: Asana suporta status customizados via seções do projeto — implementar futuramente.

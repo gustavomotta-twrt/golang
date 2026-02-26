@@ -46,6 +46,11 @@ type AsanaCustomFieldSetting struct {
 	CustomField AsanaProjectCustomField `json:"custom_field"`
 }
 
+type AsanaTag struct {
+	Gid  string `json:"gid"`
+	Name string `json:"name"`
+}
+
 type AsanaTasks struct {
 	Gid          string             `json:"gid"`
 	Name         string             `json:"name"`
@@ -54,6 +59,7 @@ type AsanaTasks struct {
 	Assignee     *AsanaUser         `json:"assignee"`
 	DueOn        string             `json:"due_on"`
 	CustomFields []AsanaCustomField `json:"custom_fields"`
+	Tags         []AsanaTag         `json:"tags"`
 }
 
 type AsanaDetailError struct {
@@ -73,6 +79,20 @@ type CreateTaskRequest struct {
 	Assignee     string            `json:"assignee,omitempty"`
 	DueOn        string            `json:"due_on,omitempty"`
 	CustomFields map[string]string `json:"custom_fields,omitempty"`
+	Tags         []string          `json:"tags,omitempty"`
+}
+
+type CreateTagRequest struct {
+	Name      string `json:"name"`
+	Workspace string `json:"workspace"`
+}
+
+type CreateTagRequestWrapper struct {
+	Data CreateTagRequest `json:"data"`
+}
+
+type CreateTagResponse struct {
+	Data AsanaTag `json:"data"`
 }
 
 type CreateTaskRequestWrapper struct {
