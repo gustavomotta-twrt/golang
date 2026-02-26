@@ -153,7 +153,7 @@ func (c *AsanaClient) CreateTask(projectId string, workspaceId string, task mode
 	if task.Priority != "" {
 		parts := strings.SplitN(task.Priority, ":", 2)
 		if len(parts) == 2 {
-			reqBody.CustomFields = map[string]any{
+			reqBody.CustomFields = map[string]string{
 				parts[0]: parts[1],
 			}
 		}
