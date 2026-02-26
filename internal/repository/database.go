@@ -65,6 +65,30 @@ func createTables(db *sql.DB) error {
         created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (migration_id) REFERENCES migrations(id)
     );
+
+    CREATE TABLE IF NOT EXISTS custom_field_mappings (
+        id               INTEGER PRIMARY KEY AUTOINCREMENT,
+        migration_id     INTEGER NOT NULL,
+        source_field_id  TEXT NOT NULL,
+        source_field_name TEXT NOT NULL,
+        source_field_type TEXT NOT NULL,
+        dest_field_id    TEXT NOT NULL,
+        dest_field_name  TEXT NOT NULL,
+        dest_field_type  TEXT NOT NULL,
+        degraded         BOOLEAN DEFAULT FALSE,
+        created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (migration_id) REFERENCES migrations(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS custom_field_option_mappings (
+        id                INTEGER PRIMARY KEY AUTOINCREMENT,
+        field_mapping_id  INTEGER NOT NULL,
+        source_option_id  TEXT NOT NULL,
+        source_option_name TEXT NOT NULL,
+        dest_option_id    TEXT NOT NULL,
+        dest_option_name  TEXT NOT NULL,
+        FOREIGN KEY (field_mapping_id) REFERENCES custom_field_mappings(id)
+    );
     `
 
 	if _, err := db.Exec(schema); err != nil {
