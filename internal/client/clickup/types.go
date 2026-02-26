@@ -14,8 +14,10 @@ type GetMultipleSpacesResponse struct {
 }
 
 type ClickUpSpace struct {
-	Id   string `json:"id"`
-	Name string `json:"name"`
+	Id     string `json:"id"`
+	Name   string `json:"name"`
+	Color  string `json:"color"`
+	Avatar string `json:"avatar"`
 }
 
 type ClickupTeamMember struct {
@@ -81,6 +83,7 @@ type ClickUpPriority struct {
 type ClickUpTask struct {
 	Id           string             `json:"id"`
 	Name         string             `json:"name"`
+	Description  string             `json:"description"`
 	Status       ClickUpStatus      `json:"status"`
 	OrderIndex   string             `json:"orderindex"`
 	DateCreated  string             `json:"date_created"`

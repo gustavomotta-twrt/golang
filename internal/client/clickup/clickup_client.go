@@ -123,12 +123,13 @@ func (c *ClickUpClient) GetTasks(listId string) ([]models.Task, error) {
 		}
 
 		tasks[i] = models.Task{
-			Id:        clickUpTask.Id,
-			Name:      clickUpTask.Name,
-			Status:    clickUpTask.Status.Status,
-			Assignees: assignees,
-			DueDate:   dueDate,
-			Priority:  priority,
+			Id:          clickUpTask.Id,
+			Name:        clickUpTask.Name,
+			Description: clickUpTask.Description,
+			Status:      clickUpTask.Status.Status,
+			Assignees:   assignees,
+			DueDate:     dueDate,
+			Priority:    priority,
 		}
 	}
 
