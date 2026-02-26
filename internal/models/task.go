@@ -16,6 +16,7 @@ type Task struct {
 	Completed   bool
 	Assignees   []TaskAssignee
 	DueDate     *time.Time
-	Tags        []string
-	Priority    string
+	Tags         []string
+	Priority     string
+	CustomFields []CustomFieldValue
 }

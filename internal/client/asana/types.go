@@ -20,9 +20,14 @@ type AsanaCustomFieldEnumValue struct {
 }
 
 type AsanaCustomField struct {
-	Gid       string                     `json:"gid"`
-	Name      string                     `json:"name"`
-	EnumValue *AsanaCustomFieldEnumValue `json:"enum_value"`
+	Gid              string                         `json:"gid"`
+	Name             string                         `json:"name"`
+	Type             string                         `json:"type,omitempty"`
+	TextValue        string                         `json:"text_value,omitempty"`
+	NumberValue      float64                        `json:"number_value,omitempty"`
+	EnumValue        *AsanaCustomFieldEnumValue     `json:"enum_value,omitempty"`
+	MultiEnumValues  []AsanaCustomFieldEnumValue    `json:"multi_enum_values,omitempty"`
+	DateValue        string                         `json:"date_value,omitempty"`
 }
 
 type AsanaEnumOption struct {
@@ -33,7 +38,15 @@ type AsanaEnumOption struct {
 type AsanaProjectCustomField struct {
 	Gid         string            `json:"gid"`
 	Name        string            `json:"name"`
-	EnumOptions []AsanaEnumOption `json:"enum_options"`
+	Type        string            `json:"type,omitempty"`
+	EnumOptions []AsanaEnumOption `json:"enum_options,omitempty"`
+}
+
+type AsanaCustomFieldDefinition struct {
+	Gid         string            `json:"gid"`
+	Name        string            `json:"name"`
+	Type        string            `json:"type,omitempty"`
+	EnumOptions []AsanaEnumOption `json:"enum_options,omitempty"`
 }
 
 type AsanaProject struct {
@@ -78,7 +91,7 @@ type CreateTaskRequest struct {
 	Completed    bool              `json:"completed"`
 	Assignee     string            `json:"assignee,omitempty"`
 	DueOn        string            `json:"due_on,omitempty"`
-	CustomFields map[string]string `json:"custom_fields,omitempty"`
+	CustomFields map[string]any `json:"custom_fields,omitempty"`
 	Tags         []string          `json:"tags,omitempty"`
 }
 

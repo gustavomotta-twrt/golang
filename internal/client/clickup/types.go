@@ -84,6 +84,37 @@ type ClickUpTag struct {
 	Name string `json:"name"`
 }
 
+type ClickUpFieldOption struct {
+	Id         string `json:"id"`
+	Name       string `json:"name"`
+	Color      string `json:"color,omitempty"`
+	OrderIndex int    `json:"orderindex,omitempty"`
+}
+
+type ClickUpCustomFieldTypeConfig struct {
+	Options []ClickUpFieldOption `json:"options,omitempty"`
+}
+
+type ClickUpCustomField struct {
+	Id         string                      `json:"id"`
+	Name       string                      `json:"name"`
+	Type       string                      `json:"type"`
+	TypeConfig ClickUpCustomFieldTypeConfig `json:"type_config,omitempty"`
+	Value      any                         `json:"value,omitempty"`
+}
+
+type ClickUpCustomFieldDefinition struct {
+	Id         string                      `json:"id"`
+	Name       string                      `json:"name"`
+	Type       string                      `json:"type"`
+	TypeConfig ClickUpCustomFieldTypeConfig `json:"type_config,omitempty"`
+}
+
+type ClickUpCustomFieldInput struct {
+	Id    string `json:"id"`
+	Value any    `json:"value"`
+}
+
 type ClickUpTask struct {
 	Id           string             `json:"id"`
 	Name         string             `json:"name"`
@@ -99,18 +130,20 @@ type ClickUpTask struct {
 	DueDate      string             `json:"due_date"`
 	StartDate    int64              `json:"start_date"`
 	TimeEstimate int64              `json:"time_estimate"`
-	TimeSpent    int64              `json:"time_spent"`
-	Tags         []ClickUpTag       `json:"tags"`
+	TimeSpent    int64                `json:"time_spent"`
+	Tags         []ClickUpTag         `json:"tags"`
+	CustomFields []ClickUpCustomField `json:"custom_fields,omitempty"`
 }
 
 type CreateTaskRequest struct {
-	Name        string   `json:"name"`
-	Description string   `json:"description,omitempty"`
-	Status      string   `json:"status,omitempty"`
-	Assignees   []int    `json:"assignees,omitempty"`
-	DueDate     *int64   `json:"due_date,omitempty"`
-	Priority    *int     `json:"priority,omitempty"`
-	Tags        []string `json:"tags,omitempty"`
+	Name         string                   `json:"name"`
+	Description  string                   `json:"description,omitempty"`
+	Status       string                   `json:"status,omitempty"`
+	Assignees    []int                    `json:"assignees,omitempty"`
+	DueDate      *int64                   `json:"due_date,omitempty"`
+	Priority     *int                     `json:"priority,omitempty"`
+	Tags         []string                 `json:"tags,omitempty"`
+	CustomFields []ClickUpCustomFieldInput `json:"custom_fields,omitempty"`
 }
 
 type ClickUpListStatus struct {
