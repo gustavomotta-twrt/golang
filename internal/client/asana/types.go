@@ -72,14 +72,51 @@ type AsanaErrors struct {
 }
 
 type CreateTaskRequest struct {
-	Name         string            `json:"name"`
-	Notes        string            `json:"notes,omitempty"`
-	Projects     []string          `json:"projects,omitempty"`
-	Completed    bool              `json:"completed"`
-	Assignee     string            `json:"assignee,omitempty"`
-	DueOn        string            `json:"due_on,omitempty"`
-	CustomFields map[string]string `json:"custom_fields,omitempty"`
-	Tags         []string          `json:"tags,omitempty"`
+	Name         string                 `json:"name"`
+	Notes        string                 `json:"notes,omitempty"`
+	Projects     []string               `json:"projects,omitempty"`
+	Completed    bool                   `json:"completed"`
+	Assignee     string                 `json:"assignee,omitempty"`
+	DueOn        string                 `json:"due_on,omitempty"`
+	CustomFields map[string]interface{} `json:"custom_fields,omitempty"`
+	Tags         []string               `json:"tags,omitempty"`
+}
+
+type AsanaEnumOptionInput struct {
+	Name string `json:"name"`
+}
+
+type CreateCustomFieldRequest struct {
+	Workspace   string                 `json:"workspace"`
+	Name        string                 `json:"name"`
+	Type        string                 `json:"type"`
+	EnumOptions []AsanaEnumOptionInput `json:"enum_options,omitempty"`
+}
+
+type CreateCustomFieldWrapper struct {
+	Data CreateCustomFieldRequest `json:"data"`
+}
+
+type AsanaCreatedEnumOption struct {
+	Gid  string `json:"gid"`
+	Name string `json:"name"`
+}
+
+type AsanaCreatedCustomField struct {
+	Gid         string                   `json:"gid"`
+	EnumOptions []AsanaCreatedEnumOption `json:"enum_options"`
+}
+
+type CreateCustomFieldResponse struct {
+	Data AsanaCreatedCustomField `json:"data"`
+}
+
+type AddCustomFieldSettingData struct {
+	CustomField string `json:"custom_field"`
+}
+
+type AddCustomFieldSettingRequest struct {
+	Data AddCustomFieldSettingData `json:"data"`
 }
 
 type CreateTagRequest struct {

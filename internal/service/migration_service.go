@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/TWRT/integration-mapper/internal/client"
 	"github.com/TWRT/integration-mapper/internal/models"
@@ -398,11 +401,25 @@ func (s *MigrationService) executeMigration(
 		}
 	}
 
+	// Build custom field mapping (auto, non-blocking)
+	cfMapping := map[string]customFieldEntry{}
+	if fp, ok := sourceClient.(client.FieldProvider); ok {
+		if fc, ok := destClient.(client.FieldCreator); ok {
+			cfMapping = s.buildCustomFieldMapping(
+				fp, fc,
+				migration.SourceProjectID,
+				migration.DestWorkspaceID,
+				migration.DestListID,
+			)
+		}
+	}
+
 	slog.Info("starting migration",
 		"migration_id", migration.Id,
 		"source", migration.Source,
 		"destination", migration.Destination,
 		"total_tasks", len(tasks),
+		"custom_fields_mapped", len(cfMapping),
 	)
 
 	successCount := 0
@@ -443,6 +460,10 @@ func (s *MigrationService) executeMigration(
 		}
 		task.Assignees = destAssignees
 
+		if len(cfMapping) > 0 {
+			task.CustomFields = convertTaskCustomFields(task.CustomFields, cfMapping)
+		}
+
 		created, err := destClient.CreateTask(migration.DestListID, migration.DestWorkspaceID, task)
 		if err != nil {
 			s.taskMappingRepo.Create(&repository.TaskMapping{
@@ -473,6 +494,207 @@ func (s *MigrationService) executeMigration(
 		finalStatus = "completed_with_errors"
 	}
 	s.migrationRepo.Complete(migration.Id, finalStatus)
+}
+
+func mapClickUpTypeToAsana(t string) string {
+	switch t {
+	case "short_text", "text", "url", "email", "phone", "tasks", "location", "users":
+		return "text"
+	case "number", "currency", "emoji", "automatic_progress", "manual_progress":
+		return "number"
+	case "drop_down", "checkbox":
+		return "enum"
+	case "labels":
+		return "multi_enum"
+	case "date":
+		return "date"
+	default:
+		return "text"
+	}
+}
+
+type customFieldEntry struct {
+	asanaGID    string
+	asanaType   string
+	clickupType string
+	optionMap   map[string]string // ClickUp key → Asana option GID
+}
+
+func (s *MigrationService) buildCustomFieldMapping(
+	fp client.FieldProvider,
+	fc client.FieldCreator,
+	sourceListId, destWorkspaceId, destProjectId string,
+) map[string]customFieldEntry {
+	defs, err := fp.GetFieldDefinitions(sourceListId)
+	if err != nil {
+		slog.Warn("could not get field definitions from source, skipping custom fields", "error", err)
+		return map[string]customFieldEntry{}
+	}
+
+	mapping := make(map[string]customFieldEntry, len(defs))
+
+	for _, def := range defs {
+		asanaType := mapClickUpTypeToAsana(def.ClickUpType)
+
+		var optionNames []string
+		switch def.ClickUpType {
+		case "drop_down":
+			// Sort by orderindex to ensure consistent order
+			sorted := make([]models.CustomFieldOption, len(def.Options))
+			copy(sorted, def.Options)
+			sort.Slice(sorted, func(i, j int) bool {
+				return sorted[i].OrderIndex < sorted[j].OrderIndex
+			})
+			for _, o := range sorted {
+				optionNames = append(optionNames, o.Name)
+			}
+		case "labels":
+			for _, o := range def.Options {
+				optionNames = append(optionNames, o.Name)
+			}
+		case "checkbox":
+			optionNames = []string{"True", "False"}
+		}
+
+		fieldGID, optionGIDs, err := fc.CreateCustomField(destWorkspaceId, def.Name, asanaType, optionNames)
+		if err != nil {
+			slog.Warn("could not create custom field in destination, skipping", "field", def.Name, "error", err)
+			continue
+		}
+
+		if err := fc.AttachCustomFieldToProject(destProjectId, fieldGID); err != nil {
+			slog.Warn("could not attach custom field to project, skipping", "field", def.Name, "error", err)
+			continue
+		}
+
+		entry := customFieldEntry{
+			asanaGID:    fieldGID,
+			asanaType:   asanaType,
+			clickupType: def.ClickUpType,
+			optionMap:   make(map[string]string),
+		}
+
+		switch def.ClickUpType {
+		case "drop_down":
+			sorted := make([]models.CustomFieldOption, len(def.Options))
+			copy(sorted, def.Options)
+			sort.Slice(sorted, func(i, j int) bool {
+				return sorted[i].OrderIndex < sorted[j].OrderIndex
+			})
+			for i, o := range sorted {
+				if i < len(optionGIDs) {
+					entry.optionMap[strconv.Itoa(o.OrderIndex)] = optionGIDs[i]
+				}
+			}
+		case "labels":
+			for i, o := range def.Options {
+				if i < len(optionGIDs) {
+					entry.optionMap[o.ID] = optionGIDs[i]
+				}
+			}
+		case "checkbox":
+			if len(optionGIDs) >= 2 {
+				entry.optionMap["true"] = optionGIDs[0]
+				entry.optionMap["false"] = optionGIDs[1]
+			}
+		}
+
+		mapping[def.ID] = entry
+	}
+
+	return mapping
+}
+
+func convertTaskCustomFields(
+	fields []models.TaskCustomField,
+	mapping map[string]customFieldEntry,
+) []models.TaskCustomField {
+	result := make([]models.TaskCustomField, 0, len(fields))
+
+	for _, cf := range fields {
+		entry, ok := mapping[cf.FieldID]
+		if !ok {
+			continue
+		}
+
+		var converted interface{}
+
+		switch entry.clickupType {
+		case "short_text", "text", "url", "email", "phone":
+			if s, ok := cf.Value.(string); ok {
+				converted = s
+			}
+
+		case "users", "tasks", "location":
+			converted = fmt.Sprintf("%v", cf.Value)
+
+		case "number", "currency", "emoji", "automatic_progress", "manual_progress":
+			if n, ok := cf.Value.(float64); ok {
+				converted = n
+			}
+
+		case "drop_down":
+			if n, ok := cf.Value.(float64); ok {
+				key := strconv.Itoa(int(n))
+				if gid, ok := entry.optionMap[key]; ok {
+					converted = gid
+				}
+			}
+
+		case "labels":
+			if arr, ok := cf.Value.([]interface{}); ok {
+				gids := make([]string, 0, len(arr))
+				for _, item := range arr {
+					if m, ok := item.(map[string]interface{}); ok {
+						if id, ok := m["id"].(string); ok {
+							if gid, ok := entry.optionMap[id]; ok {
+								gids = append(gids, gid)
+							}
+						}
+					}
+				}
+				if len(gids) > 0 {
+					converted = gids
+				}
+			}
+
+		case "checkbox":
+			var key string
+			switch v := cf.Value.(type) {
+			case bool:
+				if v {
+					key = "true"
+				} else {
+					key = "false"
+				}
+			case string:
+				key = strings.ToLower(v)
+			}
+			if key != "" {
+				if gid, ok := entry.optionMap[key]; ok {
+					converted = gid
+				}
+			}
+
+		case "date":
+			if ms, ok := cf.Value.(string); ok {
+				msInt, err := strconv.ParseInt(ms, 10, 64)
+				if err == nil {
+					t := time.UnixMilli(msInt).UTC()
+					converted = map[string]interface{}{"date": t.Format("2006-01-02")}
+				}
+			}
+		}
+
+		if converted != nil {
+			result = append(result, models.TaskCustomField{
+				FieldID: entry.asanaGID,
+				Value:   converted,
+			})
+		}
+	}
+
+	return result
 }
 
 func (s *MigrationService) GetMigration(id int64) (repository.Migration, error) {

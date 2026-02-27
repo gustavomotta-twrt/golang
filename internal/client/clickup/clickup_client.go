@@ -127,19 +127,65 @@ func (c *ClickUpClient) GetTasks(listId string) ([]models.Task, error) {
 			tags = append(tags, t.Name)
 		}
 
+		customFields := make([]models.TaskCustomField, 0, len(clickUpTask.CustomFields))
+		for _, cf := range clickUpTask.CustomFields {
+			if len(cf.Value) == 0 || string(cf.Value) == "null" {
+				continue
+			}
+			var rawValue interface{}
+			if err := json.Unmarshal(cf.Value, &rawValue); err != nil {
+				continue
+			}
+			customFields = append(customFields, models.TaskCustomField{
+				FieldID: cf.ID,
+				Value:   rawValue,
+			})
+		}
+
 		tasks[i] = models.Task{
-			Id:          clickUpTask.Id,
-			Name:        clickUpTask.Name,
-			Description: clickUpTask.Description,
-			Status:      clickUpTask.Status.Status,
-			Assignees:   assignees,
-			DueDate:     dueDate,
-			Priority:    priority,
-			Tags:        tags,
+			Id:           clickUpTask.Id,
+			Name:         clickUpTask.Name,
+			Description:  clickUpTask.Description,
+			Status:       clickUpTask.Status.Status,
+			Assignees:    assignees,
+			DueDate:      dueDate,
+			Priority:     priority,
+			Tags:         tags,
+			CustomFields: customFields,
 		}
 	}
 
 	return tasks, nil
+}
+
+func (c *ClickUpClient) GetFieldDefinitions(listId string) ([]models.CustomFieldDefinition, error) {
+	fields, err := c.GetListCustomFields(listId)
+	if err != nil {
+		return nil, fmt.Errorf("get field definitions (clickup): %w", err)
+	}
+
+	defs := make([]models.CustomFieldDefinition, 0, len(fields))
+	for _, f := range fields {
+		opts := make([]models.CustomFieldOption, 0, len(f.TypeConfig.Options))
+		for _, o := range f.TypeConfig.Options {
+			name := o.Name
+			if name == "" {
+				name = o.Label
+			}
+			opts = append(opts, models.CustomFieldOption{
+				ID:         o.Id,
+				Name:       name,
+				OrderIndex: o.OrderIndex,
+			})
+		}
+		defs = append(defs, models.CustomFieldDefinition{
+			ID:          f.Id,
+			Name:        f.Name,
+			ClickUpType: f.Type,
+			Options:     opts,
+		})
+	}
+	return defs, nil
 }
 
 func (c *ClickUpClient) CreateTask(listId string, _ string, task models.Task) (*models.Task, error) {
@@ -371,6 +417,51 @@ func (c *ClickUpClient) GetLists(spaceId string) ([]ClickUpList, error) {
 	}
 
 	return clickupResp.Lists, nil
+}
+
+func (c *ClickUpClient) GetListCustomFields(listId string) ([]ClickUpCustomField, error) {
+	url := c.baseUrl + "/list/" + listId + "/field"
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build request (clickup): %w", err)
+	}
+
+	req.Header.Set("Authorization", c.token)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("get list custom fields (clickup): %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		errorBody, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("read error body (clickup): %w", err)
+		}
+
+		var clickupErr ClickUpErrors
+		if err := json.Unmarshal(errorBody, &clickupErr); err != nil {
+			return nil, fmt.Errorf("error status (clickup): %d", resp.StatusCode)
+		}
+		if clickupErr.Err != "" {
+			return nil, fmt.Errorf("ClickUp error: %s", clickupErr.Err)
+		}
+		return nil, fmt.Errorf("API error status %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read response body (clickup): %w", err)
+	}
+
+	var clickupResp GetListCustomFieldsResponse
+	if err := json.Unmarshal(body, &clickupResp); err != nil {
+		return nil, fmt.Errorf("parse custom fields (clickup): %w", err)
+	}
+
+	return clickupResp.Fields, nil
 }
 
 func (c *ClickUpClient) GetListStatuses(listId string) ([]string, error) {

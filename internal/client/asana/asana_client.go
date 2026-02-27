@@ -150,13 +150,23 @@ func (c *AsanaClient) CreateTask(projectId string, workspaceId string, task mode
 		reqBody.Assignee = task.Assignees[0].ID
 	}
 
+	reqBody.CustomFields = make(map[string]interface{})
+
 	if task.Priority != "" {
 		parts := strings.SplitN(task.Priority, ":", 2)
 		if len(parts) == 2 {
-			reqBody.CustomFields = map[string]string{
-				parts[0]: parts[1],
-			}
+			reqBody.CustomFields[parts[0]] = parts[1]
 		}
+	}
+
+	for _, cf := range task.CustomFields {
+		if cf.Value != nil {
+			reqBody.CustomFields[cf.FieldID] = cf.Value
+		}
+	}
+
+	if len(reqBody.CustomFields) == 0 {
+		reqBody.CustomFields = nil
 	}
 
 	if len(task.Tags) > 0 && workspaceId != "" {
@@ -551,4 +561,104 @@ func (c *AsanaClient) GetProjectCustomFieldOptions(projectGid string) (map[strin
 	}
 
 	return map[string]string{}, nil
+}
+
+func (c *AsanaClient) CreateCustomField(workspaceId, name, asanaType string, options []string) (string, []string, error) {
+	reqData := CreateCustomFieldRequest{
+		Workspace: workspaceId,
+		Name:      name,
+		Type:      asanaType,
+	}
+	if len(options) > 0 && (asanaType == "enum" || asanaType == "multi_enum") {
+		for _, opt := range options {
+			reqData.EnumOptions = append(reqData.EnumOptions, AsanaEnumOptionInput{Name: opt})
+		}
+	}
+
+	wrapper := CreateCustomFieldWrapper{Data: reqData}
+	body, err := json.Marshal(wrapper)
+	if err != nil {
+		return "", nil, fmt.Errorf("marshal create custom field request (asana): %w", err)
+	}
+
+	req, err := http.NewRequest("POST", c.baseUrl+"/custom_fields", bytes.NewBuffer(body))
+	if err != nil {
+		return "", nil, fmt.Errorf("build request (asana create custom field): %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+c.token)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", nil, fmt.Errorf("create custom field (asana): %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		errorBody, _ := io.ReadAll(resp.Body)
+		var asanaErr AsanaErrors
+		if err := json.Unmarshal(errorBody, &asanaErr); err != nil {
+			return "", nil, fmt.Errorf("error status (asana create custom field): %d", resp.StatusCode)
+		}
+		if len(asanaErr.Errors) > 0 {
+			return "", nil, fmt.Errorf("Asana error: %s", asanaErr.Errors[0].Message)
+		}
+		return "", nil, fmt.Errorf("API error status: %d", resp.StatusCode)
+	}
+
+	responseBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", nil, fmt.Errorf("read response body (asana create custom field): %w", err)
+	}
+
+	var result CreateCustomFieldResponse
+	if err := json.Unmarshal(responseBody, &result); err != nil {
+		return "", nil, fmt.Errorf("parse create custom field response (asana): %w", err)
+	}
+
+	optionGIDs := make([]string, 0, len(result.Data.EnumOptions))
+	for _, opt := range result.Data.EnumOptions {
+		optionGIDs = append(optionGIDs, opt.Gid)
+	}
+
+	return result.Data.Gid, optionGIDs, nil
+}
+
+func (c *AsanaClient) AttachCustomFieldToProject(projectGid, fieldGid string) error {
+	reqData := AddCustomFieldSettingRequest{
+		Data: AddCustomFieldSettingData{CustomField: fieldGid},
+	}
+
+	body, err := json.Marshal(reqData)
+	if err != nil {
+		return fmt.Errorf("marshal attach custom field request (asana): %w", err)
+	}
+
+	url := c.baseUrl + "/projects/" + projectGid + "/addCustomFieldSetting"
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
+	if err != nil {
+		return fmt.Errorf("build request (asana attach custom field): %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+c.token)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("attach custom field to project (asana): %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		errorBody, _ := io.ReadAll(resp.Body)
+		var asanaErr AsanaErrors
+		if err := json.Unmarshal(errorBody, &asanaErr); err != nil {
+			return fmt.Errorf("error status (asana attach custom field): %d", resp.StatusCode)
+		}
+		if len(asanaErr.Errors) > 0 {
+			return fmt.Errorf("Asana error: %s", asanaErr.Errors[0].Message)
+		}
+		return fmt.Errorf("API error status: %d", resp.StatusCode)
+	}
+
+	return nil
 }

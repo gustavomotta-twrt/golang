@@ -39,3 +39,7 @@ func (s *IntegrationService) GetClickupSpaces(workspaceId string) ([]clickup.Cli
 func (s *IntegrationService) GetClickupLists(spaceId string) ([]clickup.ClickUpList, error) {
 	return s.clickupClient.GetLists(spaceId)
 }
+
+func (s *IntegrationService) GetClickupListCustomFields(listId string) ([]clickup.ClickUpCustomField, error) {
+	return s.clickupClient.GetListCustomFields(listId)
+}

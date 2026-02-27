@@ -99,3 +99,20 @@ func (h *IntegrationHandler) GetClickupLists(w http.ResponseWriter, r *http.Requ
 		"lists": lists,
 	})
 }
+
+func (h *IntegrationHandler) GetClickupListCustomFields(w http.ResponseWriter, r *http.Request) {
+	listId := r.PathValue("id")
+	fields, err := h.integrationService.GetClickupListCustomFields(listId)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Error trying to get ClickUp list custom fields: " + err.Error(),
+		})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"fields": fields,
+	})
+}

@@ -1,5 +1,7 @@
 package clickup
 
+import "encoding/json"
+
 type ClickUpErrors struct {
 	Err  string `json:"err"`
 	Code string `json:"ECODE"`
@@ -84,23 +86,29 @@ type ClickUpTag struct {
 	Name string `json:"name"`
 }
 
+type ClickUpTaskCustomField struct {
+	ID         string                       `json:"id"`
+	Name       string                       `json:"name"`
+	Type       string                       `json:"type"`
+	TypeConfig ClickUpCustomFieldTypeConfig `json:"type_config"`
+	Value      json.RawMessage              `json:"value"`
+}
+
 type ClickUpTask struct {
-	Id           string             `json:"id"`
-	Name         string             `json:"name"`
-	Description  string             `json:"description"`
-	Status       ClickUpStatus      `json:"status"`
-	OrderIndex   string             `json:"orderindex"`
-	DateCreated  string             `json:"date_created"`
-	DateUpdated  string             `json:"date_updated"`
-	DateClosed   *string            `json:"date_closed"`
-	Creator      ClickUpCreator     `json:"creator"`
-	Assignees    []ClickUpAssignees `json:"assignees"`
-	Priority     *ClickUpPriority   `json:"priority"`
-	DueDate      string             `json:"due_date"`
-	StartDate    int64              `json:"start_date"`
-	TimeEstimate int64              `json:"time_estimate"`
-	TimeSpent    int64              `json:"time_spent"`
-	Tags         []ClickUpTag       `json:"tags"`
+	Id           string                   `json:"id"`
+	Name         string                   `json:"name"`
+	Description  string                   `json:"description"`
+	Status       ClickUpStatus            `json:"status"`
+	OrderIndex   string                   `json:"orderindex"`
+	DateCreated  string                   `json:"date_created"`
+	DateUpdated  string                   `json:"date_updated"`
+	DateClosed   *string                  `json:"date_closed"`
+	Creator      ClickUpCreator           `json:"creator"`
+	Assignees    []ClickUpAssignees       `json:"assignees"`
+	Priority     *ClickUpPriority         `json:"priority"`
+	DueDate      string                   `json:"due_date"`
+	Tags         []ClickUpTag             `json:"tags"`
+	CustomFields []ClickUpTaskCustomField `json:"custom_fields"`
 }
 
 type CreateTaskRequest struct {
@@ -128,4 +136,29 @@ type ClickUpList struct {
 
 type GetMultipleListsResponse struct {
 	Lists []ClickUpList `json:"lists"`
+}
+
+type ClickUpCustomFieldOption struct {
+	Id         string `json:"id"`
+	Name       string `json:"name"`
+	Label      string `json:"label"`
+	Color      string `json:"color"`
+	OrderIndex int    `json:"orderindex"`
+}
+
+type ClickUpCustomFieldTypeConfig struct {
+	Options []ClickUpCustomFieldOption `json:"options"`
+}
+
+type ClickUpCustomField struct {
+	Id             string                       `json:"id"`
+	Name           string                       `json:"name"`
+	Type           string                       `json:"type"`
+	TypeConfig     ClickUpCustomFieldTypeConfig `json:"type_config"`
+	DateCreated    string                       `json:"date_created"`
+	HideFromGuests bool                         `json:"hide_from_guests"`
+}
+
+type GetListCustomFieldsResponse struct {
+	Fields []ClickUpCustomField `json:"fields"`
 }

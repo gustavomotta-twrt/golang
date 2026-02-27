@@ -53,6 +53,7 @@ func SetupRouter(db *sql.DB, asanaToken string, clickupToken string) *http.Serve
 	mux.HandleFunc("GET /clickup/workspaces", integrationHandler.GetClickupWorkspaces)
 	mux.HandleFunc("GET /clickup/workspaces/{id}/spaces", integrationHandler.GetClickupSpaces)
 	mux.HandleFunc("GET /clickup/spaces/{id}/lists", integrationHandler.GetClickupLists)
+	mux.HandleFunc("GET /clickup/lists/{id}/fields", integrationHandler.GetClickupListCustomFields)
 
 	return mux
 }

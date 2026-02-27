@@ -8,14 +8,33 @@ type TaskAssignee struct {
 	Email string
 }
 
-type Task struct {
-	Id          string
+type CustomFieldOption struct {
+	ID         string
+	Name       string
+	OrderIndex int
+}
+
+type CustomFieldDefinition struct {
+	ID          string
 	Name        string
-	Description string
-	Status      string
-	Completed   bool
-	Assignees   []TaskAssignee
-	DueDate     *time.Time
-	Tags        []string
-	Priority    string
+	ClickUpType string
+	Options     []CustomFieldOption
+}
+
+type TaskCustomField struct {
+	FieldID string
+	Value   interface{}
+}
+
+type Task struct {
+	Id           string
+	Name         string
+	Description  string
+	Status       string
+	Completed    bool
+	Assignees    []TaskAssignee
+	DueDate      *time.Time
+	Tags         []string
+	Priority     string
+	CustomFields []TaskCustomField
 }

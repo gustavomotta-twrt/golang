@@ -19,6 +19,15 @@ type PriorityLookup interface {
 	GetProjectCustomFieldOptions(projectGid string) (map[string]string, error)
 }
 
+type FieldProvider interface {
+	GetFieldDefinitions(listId string) ([]models.CustomFieldDefinition, error)
+}
+
+type FieldCreator interface {
+	CreateCustomField(workspaceId, name, asanaType string, options []string) (fieldGID string, optionGIDs []string, err error)
+	AttachCustomFieldToProject(projectGid, fieldGid string) error
+}
+
 type IntegrationProvider interface {
 	TaskClient
 	MemberProvider
