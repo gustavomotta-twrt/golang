@@ -7,10 +7,22 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/TWRT/integration-mapper/internal/models"
 )
+
+var clickUpSystemFieldPrefixes = []string{"BASELINE_"}
+
+func isSystemField(name string) bool {
+	for _, prefix := range clickUpSystemFieldPrefixes {
+		if strings.HasPrefix(name, prefix) {
+			return true
+		}
+	}
+	return false
+}
 
 type ClickUpClient struct {
 	baseUrl    string
@@ -166,6 +178,9 @@ func (c *ClickUpClient) GetFieldDefinitions(listId string) ([]models.CustomField
 
 	defs := make([]models.CustomFieldDefinition, 0, len(fields))
 	for _, f := range fields {
+		if isSystemField(f.Name) {
+			continue
+		}
 		opts := make([]models.CustomFieldOption, 0, len(f.TypeConfig.Options))
 		for _, o := range f.TypeConfig.Options {
 			name := o.Name

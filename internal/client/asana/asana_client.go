@@ -624,6 +624,100 @@ func (c *AsanaClient) CreateCustomField(workspaceId, name, asanaType string, opt
 	return result.Data.Gid, optionGIDs, nil
 }
 
+func (c *AsanaClient) GetProjectCustomField(projectGid, name string) (string, []string, bool, error) {
+	url := c.baseUrl + "/projects/" + projectGid + "/custom_field_settings" +
+		"?opt_fields=custom_field.gid,custom_field.name,custom_field.enum_options,custom_field.enum_options.gid,custom_field.enum_options.name"
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return "", nil, false, fmt.Errorf("build request (asana project custom fields): %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", nil, false, fmt.Errorf("get project custom fields (asana): %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", nil, false, fmt.Errorf("read response (asana project custom fields): %w", err)
+	}
+
+	var result AsanaResponse[AsanaCustomFieldSetting]
+	if err := json.Unmarshal(body, &result); err != nil {
+		return "", nil, false, fmt.Errorf("parse project custom fields (asana): %w", err)
+	}
+
+	for _, setting := range result.Data {
+		if setting.CustomField.Name == name {
+			optionGIDs := make([]string, 0, len(setting.CustomField.EnumOptions))
+			for _, opt := range setting.CustomField.EnumOptions {
+				optionGIDs = append(optionGIDs, opt.Gid)
+			}
+			return setting.CustomField.Gid, optionGIDs, true, nil
+		}
+	}
+
+	return "", nil, false, nil
+}
+
+func (c *AsanaClient) FindCustomFieldByName(workspaceId, name string) (string, []string, error) {
+	baseURL := fmt.Sprintf("%s/workspaces/%s/custom_fields?opt_fields=gid,name,enum_options,enum_options.gid,enum_options.name&limit=100", c.baseUrl, workspaceId)
+	nextURL := baseURL
+
+	for nextURL != "" {
+		req, err := http.NewRequest("GET", nextURL, nil)
+		if err != nil {
+			return "", nil, fmt.Errorf("build request (asana find custom field): %w", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+c.token)
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return "", nil, fmt.Errorf("find custom field (asana): %w", err)
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return "", nil, fmt.Errorf("read response (asana find custom field): %w", err)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			var asanaErr AsanaErrors
+			if jsonErr := json.Unmarshal(body, &asanaErr); jsonErr == nil && len(asanaErr.Errors) > 0 {
+				return "", nil, fmt.Errorf("Asana error (list custom fields %d): %s", resp.StatusCode, asanaErr.Errors[0].Message)
+			}
+			return "", nil, fmt.Errorf("Asana error (list custom fields %d): %s", resp.StatusCode, string(body))
+		}
+
+		var result AsanaResponse[AsanaCreatedCustomField]
+		if err := json.Unmarshal(body, &result); err != nil {
+			return "", nil, fmt.Errorf("parse custom fields (asana find): %w", err)
+		}
+
+		for _, field := range result.Data {
+			if field.Name == name {
+				optionGIDs := make([]string, 0, len(field.EnumOptions))
+				for _, opt := range field.EnumOptions {
+					optionGIDs = append(optionGIDs, opt.Gid)
+				}
+				return field.Gid, optionGIDs, nil
+			}
+		}
+
+		if result.NextPage != nil && result.NextPage.Offset != "" {
+			nextURL = baseURL + "&offset=" + result.NextPage.Offset
+		} else {
+			nextURL = ""
+		}
+	}
+
+	return "", nil, fmt.Errorf("custom field %q not found in workspace", name)
+}
+
 func (c *AsanaClient) AttachCustomFieldToProject(projectGid, fieldGid string) error {
 	reqData := AddCustomFieldSettingRequest{
 		Data: AddCustomFieldSettingData{CustomField: fieldGid},
@@ -648,14 +742,18 @@ func (c *AsanaClient) AttachCustomFieldToProject(projectGid, fieldGid string) er
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		errorBody, _ := io.ReadAll(resp.Body)
 		var asanaErr AsanaErrors
 		if err := json.Unmarshal(errorBody, &asanaErr); err != nil {
 			return fmt.Errorf("error status (asana attach custom field): %d", resp.StatusCode)
 		}
 		if len(asanaErr.Errors) > 0 {
-			return fmt.Errorf("Asana error: %s", asanaErr.Errors[0].Message)
+			msg := asanaErr.Errors[0].Message
+			if strings.Contains(msg, "already present") || strings.Contains(msg, "already exists") {
+				return nil
+			}
+			return fmt.Errorf("Asana error: %s", msg)
 		}
 		return fmt.Errorf("API error status: %d", resp.StatusCode)
 	}

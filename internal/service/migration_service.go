@@ -401,7 +401,6 @@ func (s *MigrationService) executeMigration(
 		}
 	}
 
-	// Build custom field mapping (auto, non-blocking)
 	cfMapping := map[string]customFieldEntry{}
 	if fp, ok := sourceClient.(client.FieldProvider); ok {
 		if fc, ok := destClient.(client.FieldCreator); ok {
@@ -460,9 +459,7 @@ func (s *MigrationService) executeMigration(
 		}
 		task.Assignees = destAssignees
 
-		if len(cfMapping) > 0 {
-			task.CustomFields = convertTaskCustomFields(task.CustomFields, cfMapping)
-		}
+		task.CustomFields = convertTaskCustomFields(task.CustomFields, cfMapping)
 
 		created, err := destClient.CreateTask(migration.DestListID, migration.DestWorkspaceID, task)
 		if err != nil {
@@ -517,7 +514,7 @@ type customFieldEntry struct {
 	asanaGID    string
 	asanaType   string
 	clickupType string
-	optionMap   map[string]string // ClickUp key → Asana option GID
+	optionMap   map[string]string
 }
 
 func (s *MigrationService) buildCustomFieldMapping(
@@ -539,7 +536,6 @@ func (s *MigrationService) buildCustomFieldMapping(
 		var optionNames []string
 		switch def.ClickUpType {
 		case "drop_down":
-			// Sort by orderindex to ensure consistent order
 			sorted := make([]models.CustomFieldOption, len(def.Options))
 			copy(sorted, def.Options)
 			sort.Slice(sorted, func(i, j int) bool {
@@ -556,15 +552,31 @@ func (s *MigrationService) buildCustomFieldMapping(
 			optionNames = []string{"True", "False"}
 		}
 
-		fieldGID, optionGIDs, err := fc.CreateCustomField(destWorkspaceId, def.Name, asanaType, optionNames)
-		if err != nil {
-			slog.Warn("could not create custom field in destination, skipping", "field", def.Name, "error", err)
-			continue
+		fieldGID, optionGIDs, found, lookupErr := fc.GetProjectCustomField(destProjectId, def.Name)
+		if lookupErr != nil {
+			slog.Warn("could not check existing project fields, will try to create", "field", def.Name, "error", lookupErr)
 		}
 
-		if err := fc.AttachCustomFieldToProject(destProjectId, fieldGID); err != nil {
-			slog.Warn("could not attach custom field to project, skipping", "field", def.Name, "error", err)
-			continue
+		if !found {
+			var createErr error
+			fieldGID, optionGIDs, createErr = fc.CreateCustomField(destWorkspaceId, def.Name, asanaType, optionNames)
+			if createErr != nil {
+				if !strings.Contains(createErr.Error(), "already exists with the name") {
+					slog.Warn("could not create custom field in destination, skipping", "field", def.Name, "error", createErr)
+					continue
+				}
+				var findErr error
+				fieldGID, optionGIDs, findErr = fc.FindCustomFieldByName(destWorkspaceId, def.Name)
+				if findErr != nil {
+					slog.Warn("could not locate existing custom field, skipping", "field", def.Name, "error", findErr)
+					continue
+				}
+			}
+
+			if err := fc.AttachCustomFieldToProject(destProjectId, fieldGID); err != nil {
+				slog.Warn("could not attach custom field to project, skipping", "field", def.Name, "error", err)
+				continue
+			}
 		}
 
 		entry := customFieldEntry{

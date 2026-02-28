@@ -1,7 +1,12 @@
 package asana
 
+type AsanaNextPage struct {
+	Offset string `json:"offset"`
+}
+
 type AsanaResponse[T any] struct {
-	Data []T `json:"data"`
+	Data     []T             `json:"data"`
+	NextPage *AsanaNextPage  `json:"next_page"`
 }
 
 type AsanaSingleResponse[T any] struct {
@@ -104,6 +109,7 @@ type AsanaCreatedEnumOption struct {
 
 type AsanaCreatedCustomField struct {
 	Gid         string                   `json:"gid"`
+	Name        string                   `json:"name"`
 	EnumOptions []AsanaCreatedEnumOption `json:"enum_options"`
 }
 

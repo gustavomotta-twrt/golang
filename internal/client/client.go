@@ -26,6 +26,8 @@ type FieldProvider interface {
 type FieldCreator interface {
 	CreateCustomField(workspaceId, name, asanaType string, options []string) (fieldGID string, optionGIDs []string, err error)
 	AttachCustomFieldToProject(projectGid, fieldGid string) error
+	GetProjectCustomField(projectGid, name string) (fieldGID string, optionGIDs []string, found bool, err error)
+	FindCustomFieldByName(workspaceId, name string) (fieldGID string, optionGIDs []string, err error)
 }
 
 type IntegrationProvider interface {
