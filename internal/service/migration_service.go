@@ -53,6 +53,7 @@ type MappingsState struct {
 	AvailableDestMembers    []models.Member
 	AvailableDestStatuses   []string
 	AvailableDestPriorities []string
+	DiscoveredCustomFields  []models.CustomFieldDefinition
 }
 
 type MappingInput struct {
@@ -116,6 +117,22 @@ func getAvailableDestPriorities(destination string) []string {
 		return []string{"urgent", "high", "normal", "low"}
 	}
 	return []string{"High", "Medium", "Low"}
+}
+
+func (s *MigrationService) discoverCustomFields(
+	sourceClient client.IntegrationProvider,
+	sourceProjectID string,
+) []models.CustomFieldDefinition {
+	fp, ok := sourceClient.(client.FieldProvider)
+	if !ok {
+		return []models.CustomFieldDefinition{}
+	}
+	defs, err := fp.GetFieldDefinitions(sourceProjectID)
+	if err != nil {
+		slog.Warn("could not discover custom fields from source, skipping", "error", err)
+		return []models.CustomFieldDefinition{}
+	}
+	return defs
 }
 
 func mapStatus(taskStatus string, mappings []MappingItem) string {
@@ -198,7 +215,10 @@ func (s *MigrationService) discoverAndUpsertMappings(
 	return tasks, nil
 }
 
-func (s *MigrationService) buildMappingsState(migration repository.Migration) (*MappingsState, error) {
+func (s *MigrationService) buildMappingsState(
+	migration repository.Migration,
+	customFields []models.CustomFieldDefinition,
+) (*MappingsState, error) {
 	allMappings, err := s.migrationMappingRepo.GetByMigrationID(migration.Id, nil)
 	if err != nil {
 		return nil, fmt.Errorf("get mappings: %w", err)
@@ -216,10 +236,15 @@ func (s *MigrationService) buildMappingsState(migration repository.Migration) (*
 
 	destPriorities := s.getAvailableDestPrioritiesForState(migration.Destination, migration.DestListID)
 
+	if customFields == nil {
+		customFields = []models.CustomFieldDefinition{}
+	}
+
 	state := &MappingsState{
 		AvailableDestMembers:    destMembers,
 		AvailableDestStatuses:   destStatuses,
 		AvailableDestPriorities: destPriorities,
+		DiscoveredCustomFields:  customFields,
 	}
 
 	for _, m := range allMappings {
@@ -271,8 +296,10 @@ func (s *MigrationService) CreateMigration(
 		return 0, nil, fmt.Errorf("discover mappings: %w", err)
 	}
 
+	customFields := s.discoverCustomFields(sourceProvider, sourceProjectId)
+
 	migration.Id = migrationID
-	state, err := s.buildMappingsState(*migration)
+	state, err := s.buildMappingsState(*migration, customFields)
 	if err != nil {
 		return 0, nil, fmt.Errorf("build mappings state: %w", err)
 	}
@@ -294,7 +321,9 @@ func (s *MigrationService) SyncMappings(migrationID int64) (*MappingsState, erro
 		return nil, fmt.Errorf("sync mappings: %w", err)
 	}
 
-	return s.buildMappingsState(migration)
+	customFields := s.discoverCustomFields(sourceProvider, migration.SourceProjectID)
+
+	return s.buildMappingsState(migration, customFields)
 }
 
 func (s *MigrationService) SaveMappings(migrationID int64, mappings []MappingInput) (*MappingsState, error) {
@@ -325,7 +354,7 @@ func (s *MigrationService) SaveMappings(migrationID int64, mappings []MappingInp
 		}
 	}
 
-	return s.buildMappingsState(migration)
+	return s.buildMappingsState(migration, nil)
 }
 
 func (s *MigrationService) StartMigration(migrationID int64) error {
