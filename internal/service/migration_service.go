@@ -46,6 +46,18 @@ type AssigneeMappingItem struct {
 	Email string
 }
 
+type CustomFieldState struct {
+	ID      string
+	Name    string
+	Type    string
+	Enabled bool
+}
+
+type CustomFieldSelection struct {
+	FieldID string
+	Enabled bool
+}
+
 type MappingsState struct {
 	Status                  []MappingItem
 	Priority                []MappingItem
@@ -53,7 +65,7 @@ type MappingsState struct {
 	AvailableDestMembers    []models.Member
 	AvailableDestStatuses   []string
 	AvailableDestPriorities []string
-	DiscoveredCustomFields  []models.CustomFieldDefinition
+	DiscoveredCustomFields  []CustomFieldState
 }
 
 type MappingInput struct {
@@ -215,9 +227,25 @@ func (s *MigrationService) discoverAndUpsertMappings(
 	return tasks, nil
 }
 
+func (s *MigrationService) loadCustomFieldsState(migrationID int64) []CustomFieldState {
+	dbRows, err := s.migrationMappingRepo.GetCustomFields(migrationID)
+	if err != nil {
+		return []CustomFieldState{}
+	}
+	result := make([]CustomFieldState, 0, len(dbRows))
+	for _, r := range dbRows {
+		result = append(result, CustomFieldState{
+			ID:      r.FieldID,
+			Name:    r.FieldName,
+			Type:    r.FieldType,
+			Enabled: r.Enabled,
+		})
+	}
+	return result
+}
+
 func (s *MigrationService) buildMappingsState(
 	migration repository.Migration,
-	customFields []models.CustomFieldDefinition,
 ) (*MappingsState, error) {
 	allMappings, err := s.migrationMappingRepo.GetByMigrationID(migration.Id, nil)
 	if err != nil {
@@ -236,15 +264,11 @@ func (s *MigrationService) buildMappingsState(
 
 	destPriorities := s.getAvailableDestPrioritiesForState(migration.Destination, migration.DestListID)
 
-	if customFields == nil {
-		customFields = []models.CustomFieldDefinition{}
-	}
-
 	state := &MappingsState{
 		AvailableDestMembers:    destMembers,
 		AvailableDestStatuses:   destStatuses,
 		AvailableDestPriorities: destPriorities,
-		DiscoveredCustomFields:  customFields,
+		DiscoveredCustomFields:  s.loadCustomFieldsState(migration.Id),
 	}
 
 	for _, m := range allMappings {
@@ -296,10 +320,14 @@ func (s *MigrationService) CreateMigration(
 		return 0, nil, fmt.Errorf("discover mappings: %w", err)
 	}
 
-	customFields := s.discoverCustomFields(sourceProvider, sourceProjectId)
+	for _, f := range s.discoverCustomFields(sourceProvider, sourceProjectId) {
+		if err := s.migrationMappingRepo.UpsertCustomField(migrationID, f.ID, f.Name, f.ClickUpType); err != nil {
+			slog.Warn("could not persist custom field", "field", f.Name, "error", err)
+		}
+	}
 
 	migration.Id = migrationID
-	state, err := s.buildMappingsState(*migration, customFields)
+	state, err := s.buildMappingsState(*migration)
 	if err != nil {
 		return 0, nil, fmt.Errorf("build mappings state: %w", err)
 	}
@@ -321,12 +349,20 @@ func (s *MigrationService) SyncMappings(migrationID int64) (*MappingsState, erro
 		return nil, fmt.Errorf("sync mappings: %w", err)
 	}
 
-	customFields := s.discoverCustomFields(sourceProvider, migration.SourceProjectID)
+	for _, f := range s.discoverCustomFields(sourceProvider, migration.SourceProjectID) {
+		if err := s.migrationMappingRepo.UpsertCustomField(migrationID, f.ID, f.Name, f.ClickUpType); err != nil {
+			slog.Warn("could not persist custom field on sync", "field", f.Name, "error", err)
+		}
+	}
 
-	return s.buildMappingsState(migration, customFields)
+	return s.buildMappingsState(migration)
 }
 
-func (s *MigrationService) SaveMappings(migrationID int64, mappings []MappingInput) (*MappingsState, error) {
+func (s *MigrationService) SaveMappings(
+	migrationID int64,
+	mappings []MappingInput,
+	customFieldSelections []CustomFieldSelection,
+) (*MappingsState, error) {
 	migration, err := s.migrationRepo.GetMigration(migrationID)
 	if err != nil {
 		return nil, fmt.Errorf("get migration: %w", err)
@@ -337,6 +373,12 @@ func (s *MigrationService) SaveMappings(migrationID int64, mappings []MappingInp
 			migrationID, m.Type, m.SourceValue, m.DestValue,
 		); err != nil {
 			return nil, fmt.Errorf("save mapping %s/%s: %w", m.Type, m.SourceValue, err)
+		}
+	}
+
+	for _, sel := range customFieldSelections {
+		if err := s.migrationMappingRepo.UpdateCustomFieldEnabled(migrationID, sel.FieldID, sel.Enabled); err != nil {
+			return nil, fmt.Errorf("save custom field selection %s: %w", sel.FieldID, err)
 		}
 	}
 
@@ -354,7 +396,7 @@ func (s *MigrationService) SaveMappings(migrationID int64, mappings []MappingInp
 		}
 	}
 
-	return s.buildMappingsState(migration, nil)
+	return s.buildMappingsState(migration)
 }
 
 func (s *MigrationService) StartMigration(migrationID int64) error {
@@ -439,6 +481,16 @@ func (s *MigrationService) executeMigration(
 				migration.DestWorkspaceID,
 				migration.DestListID,
 			)
+			enabledIDs, err := s.migrationMappingRepo.GetEnabledCustomFieldIDs(migration.Id)
+			if err != nil {
+				slog.Warn("could not load enabled custom field IDs, migrating all fields", "migration_id", migration.Id, "error", err)
+			} else {
+				for id := range cfMapping {
+					if !enabledIDs[id] {
+						delete(cfMapping, id)
+					}
+				}
+			}
 		}
 	}
 

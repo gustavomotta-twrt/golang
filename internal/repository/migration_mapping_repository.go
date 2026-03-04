@@ -10,21 +10,36 @@ import (
 type MappingType string
 
 const (
-	MappingTypeStatus   MappingType = "status"
-	MappingTypePriority MappingType = "priority"
-	MappingTypeAssignee MappingType = "assignee"
+	MappingTypeStatus      MappingType = "status"
+	MappingTypePriority    MappingType = "priority"
+	MappingTypeAssignee    MappingType = "assignee"
+	MappingTypeCustomField MappingType = "custom_field"
 )
 
 type MappingStatus string
 
 const (
-	MappingStatusPending MappingStatus = "pending"
-	MappingStatusMapped  MappingStatus = "mapped"
+	MappingStatusPending  MappingStatus = "pending"
+	MappingStatusMapped   MappingStatus = "mapped"
+	MappingStatusEnabled  MappingStatus = "enabled"
+	MappingStatusDisabled MappingStatus = "disabled"
 )
 
 type AssigneeMetadata struct {
 	Name  string `json:"name"`
 	Email string `json:"email"`
+}
+
+type CustomFieldMetadata struct {
+	Name      string `json:"name"`
+	FieldType string `json:"field_type"`
+}
+
+type CustomFieldRow struct {
+	FieldID   string
+	FieldName string
+	FieldType string
+	Enabled   bool
 }
 
 type MigrationMapping struct {
@@ -186,4 +201,101 @@ func (r *MigrationMappingRepository) AllMapped(migrationID int64) (bool, error) 
 		return false, fmt.Errorf("check all mapped: %w", err)
 	}
 	return count == 0, nil
+}
+
+func (r *MigrationMappingRepository) UpsertCustomField(
+	migrationID int64, fieldID, fieldName, fieldType string,
+) error {
+	b, err := json.Marshal(CustomFieldMetadata{Name: fieldName, FieldType: fieldType})
+	if err != nil {
+		return fmt.Errorf("marshal custom field metadata: %w", err)
+	}
+	_, err = r.db.Exec(`
+		INSERT OR IGNORE INTO migration_mappings
+			(migration_id, type, source_value, status, metadata)
+		VALUES (?, 'custom_field', ?, 'enabled', ?)
+	`, migrationID, fieldID, string(b))
+	if err != nil {
+		return fmt.Errorf("upsert custom field: %w", err)
+	}
+	return nil
+}
+
+func (r *MigrationMappingRepository) UpdateCustomFieldEnabled(
+	migrationID int64, fieldID string, enabled bool,
+) error {
+	status := MappingStatusEnabled
+	if !enabled {
+		status = MappingStatusDisabled
+	}
+	_, err := r.db.Exec(`
+		UPDATE migration_mappings
+		SET status = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE migration_id = ? AND type = 'custom_field' AND source_value = ?
+	`, status, migrationID, fieldID)
+	if err != nil {
+		return fmt.Errorf("update custom field enabled: %w", err)
+	}
+	return nil
+}
+
+func (r *MigrationMappingRepository) GetCustomFields(
+	migrationID int64,
+) ([]CustomFieldRow, error) {
+	rows, err := r.db.Query(`
+		SELECT source_value, status, metadata
+		FROM migration_mappings
+		WHERE migration_id = ? AND type = 'custom_field'
+		ORDER BY created_at ASC
+	`, migrationID)
+	if err != nil {
+		return nil, fmt.Errorf("get custom fields: %w", err)
+	}
+	defer rows.Close()
+
+	var result []CustomFieldRow
+	for rows.Next() {
+		var fieldID, status string
+		var metaStr sql.NullString
+		if err := rows.Scan(&fieldID, &status, &metaStr); err != nil {
+			return nil, fmt.Errorf("scan custom field: %w", err)
+		}
+		row := CustomFieldRow{
+			FieldID: fieldID,
+			Enabled: status == string(MappingStatusEnabled),
+		}
+		if metaStr.Valid {
+			var meta CustomFieldMetadata
+			if err := json.Unmarshal([]byte(metaStr.String), &meta); err == nil {
+				row.FieldName = meta.Name
+				row.FieldType = meta.FieldType
+			}
+		}
+		result = append(result, row)
+	}
+	return result, rows.Err()
+}
+
+func (r *MigrationMappingRepository) GetEnabledCustomFieldIDs(
+	migrationID int64,
+) (map[string]bool, error) {
+	rows, err := r.db.Query(`
+		SELECT source_value
+		FROM migration_mappings
+		WHERE migration_id = ? AND type = 'custom_field' AND status = 'enabled'
+	`, migrationID)
+	if err != nil {
+		return nil, fmt.Errorf("get enabled custom field IDs: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[string]bool)
+	for rows.Next() {
+		var fieldID string
+		if err := rows.Scan(&fieldID); err != nil {
+			return nil, fmt.Errorf("scan custom field ID: %w", err)
+		}
+		result[fieldID] = true
+	}
+	return result, rows.Err()
 }

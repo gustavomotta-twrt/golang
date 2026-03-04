@@ -32,6 +32,10 @@ type SaveMappingsRequestBody struct {
 		SourceValue string `json:"source_value"`
 		DestValue   string `json:"dest_value"`
 	} `json:"mappings"`
+	CustomFieldSelections []struct {
+		FieldID string `json:"field_id"`
+		Enabled bool   `json:"enabled"`
+	} `json:"custom_field_selections"`
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {
@@ -156,7 +160,15 @@ func (h *MigrationHandler) SaveMappings(w http.ResponseWriter, r *http.Request) 
 		})
 	}
 
-	state, err := h.migrationService.SaveMappings(id, inputs)
+	cfSelections := make([]service.CustomFieldSelection, 0, len(req.CustomFieldSelections))
+	for _, s := range req.CustomFieldSelections {
+		cfSelections = append(cfSelections, service.CustomFieldSelection{
+			FieldID: s.FieldID,
+			Enabled: s.Enabled,
+		})
+	}
+
+	state, err := h.migrationService.SaveMappings(id, inputs, cfSelections)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "error saving mappings: "+err.Error())
 		return
