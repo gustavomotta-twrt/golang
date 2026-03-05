@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/TWRT/integration-mapper/internal/client"
@@ -17,6 +18,9 @@ type AsanaClient struct {
 	baseUrl    string
 	token      string
 	httpClient *http.Client
+
+	tagCacheMu sync.RWMutex
+	tagCache   map[string]map[string]string // workspaceId → (tagName lowercase → GID)
 }
 
 func NewAsanaClient(token string) *AsanaClient {
@@ -24,6 +28,7 @@ func NewAsanaClient(token string) *AsanaClient {
 		baseUrl:    "https://app.asana.com/api/1.0",
 		token:      token,
 		httpClient: &http.Client{Timeout: 10 * time.Second},
+		tagCache:   make(map[string]map[string]string),
 	}
 }
 
@@ -185,21 +190,31 @@ func (c *AsanaClient) CreateTask(projectId string, workspaceId string, task mode
 	}
 
 	if len(task.Tags) > 0 && workspaceId != "" {
-		existingTags, err := c.GetTagsForWorkspace(workspaceId)
+		cachedTags, err := c.GetTagsForWorkspace(workspaceId)
 		if err != nil {
 			return nil, fmt.Errorf("get workspace tags for resolution (asana): %w", err)
 		}
 
 		tagGids := make([]string, 0, len(task.Tags))
 		for _, tagName := range task.Tags {
-			gid, ok := existingTags[strings.ToLower(tagName)]
+			key := strings.ToLower(tagName)
+
+			c.tagCacheMu.RLock()
+			gid, ok := cachedTags[key]
+			c.tagCacheMu.RUnlock()
+
 			if !ok {
 				newGid, err := c.CreateTag(workspaceId, tagName)
 				if err != nil {
 					return nil, fmt.Errorf("create tag %q (asana): %w", tagName, err)
 				}
 				gid = newGid
+
+				c.tagCacheMu.Lock()
+				cachedTags[key] = gid
+				c.tagCacheMu.Unlock()
 			}
+
 			tagGids = append(tagGids, gid)
 		}
 		reqBody.Tags = tagGids
@@ -404,7 +419,7 @@ func (c *AsanaClient) GetProjects(workspaceId string) ([]GetMultipleProjectsResp
 	return asanaResp.Data, nil
 }
 
-func (c *AsanaClient) GetTagsForWorkspace(workspaceId string) (map[string]string, error) {
+func (c *AsanaClient) fetchTagsFromAPI(workspaceId string) (map[string]string, error) {
 	tagMap := make(map[string]string)
 	offset := ""
 
@@ -425,23 +440,22 @@ func (c *AsanaClient) GetTagsForWorkspace(workspaceId string) (map[string]string
 		if err != nil {
 			return nil, fmt.Errorf("get tags (asana): %w", err)
 		}
-		defer resp.Body.Close()
+
+		body, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if readErr != nil {
+			return nil, fmt.Errorf("read response body (asana tags): %w", readErr)
+		}
 
 		if resp.StatusCode != http.StatusOK {
-			errorBody, _ := io.ReadAll(resp.Body)
 			var asanaErr AsanaErrors
-			if err := json.Unmarshal(errorBody, &asanaErr); err != nil {
+			if err := json.Unmarshal(body, &asanaErr); err != nil {
 				return nil, fmt.Errorf("error status (asana tags): %d", resp.StatusCode)
 			}
 			if len(asanaErr.Errors) > 0 {
 				return nil, fmt.Errorf("Asana error: %s", asanaErr.Errors[0].Message)
 			}
 			return nil, fmt.Errorf("API error status: %d", resp.StatusCode)
-		}
-
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return nil, fmt.Errorf("read response body (asana tags): %w", err)
 		}
 
 		var result struct {
@@ -463,6 +477,33 @@ func (c *AsanaClient) GetTagsForWorkspace(workspaceId string) (map[string]string
 		}
 		offset = result.NextPage.Offset
 	}
+
+	return tagMap, nil
+}
+
+func (c *AsanaClient) GetTagsForWorkspace(workspaceId string) (map[string]string, error) {
+	// Fast path: cache hit
+	c.tagCacheMu.RLock()
+	if cached, ok := c.tagCache[workspaceId]; ok {
+		c.tagCacheMu.RUnlock()
+		return cached, nil
+	}
+	c.tagCacheMu.RUnlock()
+
+	// Slow path: fetch from API without holding the lock
+	tagMap, err := c.fetchTagsFromAPI(workspaceId)
+	if err != nil {
+		return nil, err
+	}
+
+	// Double-check: another goroutine may have populated the cache while we fetched
+	c.tagCacheMu.Lock()
+	if existing, ok := c.tagCache[workspaceId]; ok {
+		c.tagCacheMu.Unlock()
+		return existing, nil
+	}
+	c.tagCache[workspaceId] = tagMap
+	c.tagCacheMu.Unlock()
 
 	return tagMap, nil
 }
