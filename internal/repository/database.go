@@ -3,7 +3,6 @@ package repository
 import (
 	"database/sql"
 	"fmt"
-	"strings"
 
 	_ "modernc.org/sqlite"
 )
@@ -48,18 +47,23 @@ func createTables(db *sql.DB) error {
     );
 
     CREATE TABLE IF NOT EXISTS migration_mappings (
-        id           INTEGER PRIMARY KEY AUTOINCREMENT,
-        migration_id INTEGER NOT NULL,
-        type         TEXT NOT NULL,
-        source_value TEXT NOT NULL,
-        dest_value   TEXT,
-        status       TEXT NOT NULL DEFAULT 'pending',
-        metadata     TEXT,
-        created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+        migration_id        INTEGER NOT NULL,
+        type                TEXT NOT NULL,
+        source_value        TEXT NOT NULL,
+        dest_value          TEXT,
+        source_container_id TEXT,
+        status              TEXT NOT NULL DEFAULT 'pending',
+        metadata            TEXT,
+        created_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (migration_id) REFERENCES migrations(id),
-        UNIQUE (migration_id, type, source_value)
+        UNIQUE (migration_id, type, source_value, source_container_id)
     );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_migration_mappings_global_unique
+        ON migration_mappings (migration_id, type, source_value)
+        WHERE source_container_id IS NULL;
 
     CREATE TABLE IF NOT EXISTS container_mappings (
         id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -93,15 +97,86 @@ func createTables(db *sql.DB) error {
 }
 
 func runMigrations(db *sql.DB) error {
-	migrations := []string{
-		`ALTER TABLE container_mappings ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1`,
+	if err := migrateAddSourceContainerID(db); err != nil {
+		return fmt.Errorf("migration add source_container_id: %w", err)
 	}
-	for _, m := range migrations {
-		if _, err := db.Exec(m); err != nil {
-			if !strings.Contains(err.Error(), "duplicate column name") {
-				return fmt.Errorf("run migration: %w", err)
-			}
+
+	// Ensure enabled column exists on container_mappings (legacy migration)
+	if _, err := db.Exec(`ALTER TABLE container_mappings ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1`); err != nil {
+		// ignore "duplicate column" errors
+		_ = err
+	}
+
+	return nil
+}
+
+// migrateAddSourceContainerID recreates migration_mappings to add source_container_id
+// if the column does not yet exist.
+func migrateAddSourceContainerID(db *sql.DB) error {
+	rows, err := db.Query("PRAGMA table_info(migration_mappings)")
+	if err != nil {
+		return fmt.Errorf("pragma table_info: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid, notnull, pk int
+		var name, typ string
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk); err != nil {
+			return fmt.Errorf("scan pragma row: %w", err)
+		}
+		if name == "source_container_id" {
+			return nil // already migrated
 		}
 	}
-	return nil
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	// Recreate table with new schema inside a transaction.
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+
+	stmts := []string{
+		`CREATE TABLE migration_mappings_new (
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            migration_id        INTEGER NOT NULL,
+            type                TEXT NOT NULL,
+            source_value        TEXT NOT NULL,
+            dest_value          TEXT,
+            source_container_id TEXT,
+            status              TEXT NOT NULL DEFAULT 'pending',
+            metadata            TEXT,
+            created_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (migration_id) REFERENCES migrations(id),
+            UNIQUE (migration_id, type, source_value, source_container_id)
+        )`,
+		`INSERT INTO migration_mappings_new
+            (id, migration_id, type, source_value, dest_value, source_container_id, status, metadata, created_at, updated_at)
+         SELECT id, migration_id, type, source_value, dest_value, NULL, status, metadata, created_at, updated_at
+         FROM migration_mappings`,
+		`DROP TABLE migration_mappings`,
+		`ALTER TABLE migration_mappings_new RENAME TO migration_mappings`,
+	}
+
+	for _, stmt := range stmts {
+		if _, err := tx.Exec(stmt); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("migration stmt: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit migration: %w", err)
+	}
+
+	// Create partial unique index for global (NULL container) mappings.
+	_, err = db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_migration_mappings_global_unique
+        ON migration_mappings (migration_id, type, source_value)
+        WHERE source_container_id IS NULL`)
+	return err
 }

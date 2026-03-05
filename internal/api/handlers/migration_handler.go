@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/TWRT/integration-mapper/internal/repository"
 	"github.com/TWRT/integration-mapper/internal/service"
 )
 
@@ -21,28 +20,36 @@ func NewMigrationHandler(migrationService *service.MigrationService) *MigrationH
 type CreateMigrationRequestBody struct {
 	Source          string `json:"source"`
 	Destination     string `json:"destination"`
-	SourceProjectId string `json:"source_project_id"` // Asana project GID or ClickUp space GID
-	DestListId      string `json:"dest_list_id"`       // Asana project GID when dest=asana
-	DestSpaceId     string `json:"dest_space_id"`      // ClickUp space GID when dest=clickup
+	SourceProjectId string `json:"source_project_id"`
+	DestListId      string `json:"dest_list_id"`
+	DestSpaceId     string `json:"dest_space_id"`
 	DestWorkspaceId string `json:"dest_workspace_id"`
 }
 
+// SaveMappingsRequestBody is the new per-container mapping format.
 type SaveMappingsRequestBody struct {
-	Mappings []struct {
-		Type        string `json:"type"`
+	Assignees []struct {
 		SourceValue string `json:"source_value"`
 		DestValue   string `json:"dest_value"`
-	} `json:"mappings"`
+	} `json:"assignees"`
 	ContainerMappings []struct {
-		SourceID string `json:"source_id"`
-		DestID   string `json:"dest_id"`
-		DestName string `json:"dest_name"`
-		Enabled  bool   `json:"enabled"`
+		SourceID         string  `json:"source_id"`
+		DestID           *string `json:"dest_id"`
+		DestName         *string `json:"dest_name"`
+		Enabled          bool    `json:"enabled"`
+		StatusMappings   []struct {
+			SourceValue string `json:"source_value"`
+			DestValue   string `json:"dest_value"`
+		} `json:"status_mappings"`
+		PriorityMappings []struct {
+			SourceValue string `json:"source_value"`
+			DestValue   string `json:"dest_value"`
+		} `json:"priority_mappings"`
+		CustomFields []struct {
+			FieldID string `json:"field_id"`
+			Enabled bool   `json:"enabled"`
+		} `json:"custom_fields"`
 	} `json:"container_mappings"`
-	CustomFieldSelections []struct {
-		FieldID string `json:"field_id"`
-		Enabled bool   `json:"enabled"`
-	} `json:"custom_field_selections"`
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {
@@ -90,10 +97,6 @@ func (h *MigrationHandler) CreateMigration(w http.ResponseWriter, r *http.Reques
 	}
 	if req.DestWorkspaceId == "" {
 		writeError(w, http.StatusBadRequest, "dest_workspace_id is required")
-		return
-	}
-	if req.Source == "clickup" && req.SourceProjectId == "" {
-		writeError(w, http.StatusBadRequest, "source_project_id (space GID) is required for ClickUp source")
 		return
 	}
 	if req.Destination == "clickup" && req.DestSpaceId == "" {
@@ -162,16 +165,11 @@ func (h *MigrationHandler) SaveMappings(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	inputs := make([]service.MappingInput, 0, len(req.Mappings))
-	for _, m := range req.Mappings {
-		if m.SourceValue == "" || m.DestValue == "" {
-			writeError(w, http.StatusBadRequest, "source_value and dest_value are required")
-			return
-		}
-		inputs = append(inputs, service.MappingInput{
-			Type:        repository.MappingType(m.Type),
-			SourceValue: m.SourceValue,
-			DestValue:   m.DestValue,
+	assignees := make([]service.AssigneeMappingInput, 0, len(req.Assignees))
+	for _, a := range req.Assignees {
+		assignees = append(assignees, service.AssigneeMappingInput{
+			SourceValue: a.SourceValue,
+			DestValue:   a.DestValue,
 		})
 	}
 
@@ -181,27 +179,47 @@ func (h *MigrationHandler) SaveMappings(w http.ResponseWriter, r *http.Request) 
 			writeError(w, http.StatusBadRequest, "container source_id is required")
 			return
 		}
-		if cm.Enabled && cm.DestID == "" {
+		if cm.Enabled && (cm.DestID == nil || *cm.DestID == "") {
 			writeError(w, http.StatusBadRequest, "container dest_id is required when enabled")
 			return
 		}
+
+		statusMappings := make([]service.FieldMappingInput, 0, len(cm.StatusMappings))
+		for _, sm := range cm.StatusMappings {
+			statusMappings = append(statusMappings, service.FieldMappingInput{
+				SourceValue: sm.SourceValue,
+				DestValue:   sm.DestValue,
+			})
+		}
+
+		priorityMappings := make([]service.FieldMappingInput, 0, len(cm.PriorityMappings))
+		for _, pm := range cm.PriorityMappings {
+			priorityMappings = append(priorityMappings, service.FieldMappingInput{
+				SourceValue: pm.SourceValue,
+				DestValue:   pm.DestValue,
+			})
+		}
+
+		customFields := make([]service.CustomFieldSelection, 0, len(cm.CustomFields))
+		for _, cf := range cm.CustomFields {
+			customFields = append(customFields, service.CustomFieldSelection{
+				FieldID: cf.FieldID,
+				Enabled: cf.Enabled,
+			})
+		}
+
 		containerInputs = append(containerInputs, service.ContainerMappingInput{
-			SourceID: cm.SourceID,
-			DestID:   cm.DestID,
-			DestName: cm.DestName,
-			Enabled:  cm.Enabled,
+			SourceID:         cm.SourceID,
+			DestID:           cm.DestID,
+			DestName:         cm.DestName,
+			Enabled:          cm.Enabled,
+			StatusMappings:   statusMappings,
+			PriorityMappings: priorityMappings,
+			CustomFields:     customFields,
 		})
 	}
 
-	cfSelections := make([]service.CustomFieldSelection, 0, len(req.CustomFieldSelections))
-	for _, s := range req.CustomFieldSelections {
-		cfSelections = append(cfSelections, service.CustomFieldSelection{
-			FieldID: s.FieldID,
-			Enabled: s.Enabled,
-		})
-	}
-
-	state, err := h.migrationService.SaveMappings(id, inputs, containerInputs, cfSelections)
+	state, err := h.migrationService.SaveMappings(id, assignees, containerInputs)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "error saving mappings: "+err.Error())
 		return
@@ -209,6 +227,32 @@ func (h *MigrationHandler) SaveMappings(w http.ResponseWriter, r *http.Request) 
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"mappings": state,
+	})
+}
+
+// GetDestContainerOptions returns available statuses and priorities for a given destination container.
+func (h *MigrationHandler) GetDestContainerOptions(w http.ResponseWriter, r *http.Request) {
+	id, err := parseMigrationID(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid migration id")
+		return
+	}
+
+	destContainerID := r.URL.Query().Get("dest_container_id")
+	if destContainerID == "" {
+		writeError(w, http.StatusBadRequest, "dest_container_id query param is required")
+		return
+	}
+
+	statuses, priorities, err := h.migrationService.GetDestContainerOptions(id, destContainerID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "error getting dest container options: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"statuses":   statuses,
+		"priorities": priorities,
 	})
 }
 

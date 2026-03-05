@@ -46,6 +46,7 @@ func SetupRouter(db *sql.DB, asanaToken string, clickupToken string) *http.Serve
 	mux.HandleFunc("POST /migrations/create", migrationHandler.CreateMigration)
 	mux.HandleFunc("GET /migrations/{id}/mappings", migrationHandler.GetMappings)
 	mux.HandleFunc("POST /migrations/{id}/mappings", migrationHandler.SaveMappings)
+	mux.HandleFunc("GET /migrations/{id}/dest-container-options", migrationHandler.GetDestContainerOptions)
 	mux.HandleFunc("POST /migrations/{id}/start", migrationHandler.StartMigration)
 	mux.HandleFunc("GET /migrations/{id}", migrationHandler.GetMigration)
 	mux.HandleFunc("GET /migrations", migrationHandler.ListMigrations)
