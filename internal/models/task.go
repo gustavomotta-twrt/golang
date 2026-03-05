@@ -27,14 +27,15 @@ type TaskCustomField struct {
 }
 
 type Task struct {
-	Id           string
-	Name         string
-	Description  string
-	Status       string
-	Completed    bool
-	Assignees    []TaskAssignee
-	DueDate      *time.Time
-	Tags         []string
-	Priority     string
-	CustomFields []TaskCustomField
+	Id              string
+	Name            string
+	Description     string
+	Status          string
+	Completed       bool
+	Assignees       []TaskAssignee
+	DueDate         *time.Time
+	Tags            []string
+	Priority        string
+	CustomFields    []TaskCustomField
+	DestContainerID string // transient: set during execution to route the task to the correct destination container
 }

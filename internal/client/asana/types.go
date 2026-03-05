@@ -80,6 +80,7 @@ type CreateTaskRequest struct {
 	Name         string                 `json:"name"`
 	Notes        string                 `json:"notes,omitempty"`
 	Projects     []string               `json:"projects,omitempty"`
+	Memberships  []AsanaMembership      `json:"memberships,omitempty"`
 	Completed    bool                   `json:"completed"`
 	Assignee     string                 `json:"assignee,omitempty"`
 	DueOn        string                 `json:"due_on,omitempty"`
@@ -161,4 +162,14 @@ type GetMultipleProjectsResponse struct {
 type AsanaPriorityFieldInfo struct {
 	FieldGid  string
 	OptionMap map[string]string
+}
+
+type AsanaSection struct {
+	Gid  string `json:"gid"`
+	Name string `json:"name"`
+}
+
+type AsanaMembership struct {
+	Project string `json:"project"`
+	Section string `json:"section"`
 }

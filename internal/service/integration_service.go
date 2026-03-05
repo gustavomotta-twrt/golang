@@ -28,6 +28,10 @@ func (s *IntegrationService) GetAsanaProjects(workspaceId string) ([]asana.GetMu
 	return s.asanaClient.GetProjects(workspaceId)
 }
 
+func (s *IntegrationService) GetAsanaSections(projectId string) ([]asana.AsanaSection, error) {
+	return s.asanaClient.GetSections(projectId)
+}
+
 func (s *IntegrationService) GetClickupWorkspaces() ([]clickup.ClickUpTeams, error) {
 	return s.clickupClient.GetWorkspaces()
 }

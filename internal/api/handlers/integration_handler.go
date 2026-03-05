@@ -50,6 +50,23 @@ func (h *IntegrationHandler) GetAsanaProjects(w http.ResponseWriter, r *http.Req
 	})
 }
 
+func (h *IntegrationHandler) GetAsanaSections(w http.ResponseWriter, r *http.Request) {
+	projectId := r.PathValue("id")
+	sections, err := h.integrationService.GetAsanaSections(projectId)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Error trying to get Asana sections: " + err.Error(),
+		})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"sections": sections,
+	})
+}
+
 func (h *IntegrationHandler) GetClickupWorkspaces(w http.ResponseWriter, r *http.Request) {
 	workspaces, err := h.integrationService.GetClickupWorkspaces()
 	if err != nil {

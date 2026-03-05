@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/TWRT/integration-mapper/internal/client"
 	"github.com/TWRT/integration-mapper/internal/models"
 )
 
@@ -137,13 +138,27 @@ func (c *AsanaClient) GetTasks(projectId string) ([]models.Task, error) {
 	return tasks, nil
 }
 
+// CreateTask creates a task in Asana. The projectId param may be in the form
+// "projectGid|sectionGid" to place the task inside a specific section.
 func (c *AsanaClient) CreateTask(projectId string, workspaceId string, task models.Task) (*models.Task, error) {
+	// Parse optional section from projectId
+	actualProjectId := projectId
+	sectionId := ""
+	if idx := strings.Index(projectId, "|"); idx != -1 {
+		actualProjectId = projectId[:idx]
+		sectionId = projectId[idx+1:]
+	}
+
 	reqBody := CreateTaskRequest{
 		Name:      task.Name,
 		Notes:     task.Description,
 		Completed: task.Status == "Completed",
-		Projects:  []string{projectId},
 		DueOn:     formatDueDate(task.DueDate),
+	}
+
+	reqBody.Projects = []string{actualProjectId}
+	if sectionId != "" {
+		reqBody.Memberships = []AsanaMembership{{Project: actualProjectId, Section: sectionId}}
 	}
 
 	if len(task.Assignees) > 0 {
@@ -504,9 +519,151 @@ func (c *AsanaClient) CreateTag(workspaceId, name string) (string, error) {
 	return result.Data.Gid, nil
 }
 
-// TODO: Asana suporta status customizados via seções do projeto — implementar futuramente.
+// GetSourceContainers returns the sections of an Asana project (used as source containers).
+func (c *AsanaClient) GetSourceContainers(projectId string) ([]client.Container, error) {
+	sections, err := c.GetSections(projectId)
+	if err != nil {
+		return nil, err
+	}
+	containers := make([]client.Container, len(sections))
+	for i, s := range sections {
+		containers[i] = client.Container{ID: s.Gid, Name: s.Name}
+	}
+	return containers, nil
+}
+
+// GetTasksByContainer returns tasks in an Asana section.
+func (c *AsanaClient) GetTasksByContainer(sectionId string) ([]models.Task, error) {
+	return c.GetTasksBySection(sectionId)
+}
+
+// GetDestContainers returns the sections of an Asana project (used as destination containers).
+func (c *AsanaClient) GetDestContainers(projectId string) ([]client.Container, error) {
+	return c.GetSourceContainers(projectId)
+}
+
 func (c *AsanaClient) GetListStatuses(listId string) ([]string, error) {
 	return []string{"Incomplete", "Completed"}, nil
+}
+
+func (c *AsanaClient) GetSections(projectId string) ([]AsanaSection, error) {
+	url := c.baseUrl + "/projects/" + projectId + "/sections?opt_fields=name"
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build request (asana get sections): %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("get sections (asana): %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read response body (asana get sections): %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		var asanaErr AsanaErrors
+		if err := json.Unmarshal(body, &asanaErr); err == nil && len(asanaErr.Errors) > 0 {
+			return nil, fmt.Errorf("Asana error: %s", asanaErr.Errors[0].Message)
+		}
+		return nil, fmt.Errorf("API error status (asana get sections): %d", resp.StatusCode)
+	}
+
+	var result AsanaResponse[AsanaSection]
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("parse sections (asana): %w", err)
+	}
+
+	return result.Data, nil
+}
+
+// GetTasksBySection fetches all tasks belonging to a specific Asana section.
+func (c *AsanaClient) GetTasksBySection(sectionId string) ([]models.Task, error) {
+	url := c.baseUrl + "/tasks?section=" + sectionId +
+		"&opt_fields=name,notes,completed,assignee,assignee.gid,assignee.name,assignee.email,due_on,custom_fields,custom_fields.name,custom_fields.enum_value,custom_fields.enum_value.name,tags,tags.name"
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build request (asana get tasks by section): %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("get tasks by section (asana): %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read response body (asana get tasks by section): %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		var asanaErr AsanaErrors
+		if err := json.Unmarshal(body, &asanaErr); err == nil && len(asanaErr.Errors) > 0 {
+			return nil, fmt.Errorf("Asana error: %s", asanaErr.Errors[0].Message)
+		}
+		return nil, fmt.Errorf("API error status (asana get tasks by section): %d", resp.StatusCode)
+	}
+
+	var asanaResp AsanaResponse[AsanaTasks]
+	if err := json.Unmarshal(body, &asanaResp); err != nil {
+		return nil, fmt.Errorf("parse tasks by section (asana): %w", err)
+	}
+
+	tasks := make([]models.Task, len(asanaResp.Data))
+	for i, asanaTask := range asanaResp.Data {
+		status := "Incomplete"
+		if asanaTask.Completed {
+			status = "Completed"
+		}
+
+		var assignees []models.TaskAssignee
+		if asanaTask.Assignee != nil {
+			assignees = []models.TaskAssignee{{
+				ID:    asanaTask.Assignee.Gid,
+				Name:  asanaTask.Assignee.Name,
+				Email: asanaTask.Assignee.Email,
+			}}
+		}
+
+		dueDate, err := parseDueDate(asanaTask.DueOn)
+		if err != nil {
+			return nil, err
+		}
+
+		var priority string
+		for _, cf := range asanaTask.CustomFields {
+			if cf.Name == "Priority" && cf.EnumValue != nil {
+				priority = cf.EnumValue.Name
+				break
+			}
+		}
+
+		tags := make([]string, 0, len(asanaTask.Tags))
+		for _, t := range asanaTask.Tags {
+			tags = append(tags, t.Name)
+		}
+
+		tasks[i] = models.Task{
+			Id:          asanaTask.Gid,
+			Name:        asanaTask.Name,
+			Description: asanaTask.Notes,
+			Status:      status,
+			Assignees:   assignees,
+			DueDate:     dueDate,
+			Priority:    priority,
+			Tags:        tags,
+		}
+	}
+
+	return tasks, nil
 }
 
 func (c *AsanaClient) GetProjectCustomFieldOptions(projectGid string) (map[string]string, error) {

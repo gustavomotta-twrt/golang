@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/TWRT/integration-mapper/internal/client"
 	"github.com/TWRT/integration-mapper/internal/models"
 )
 
@@ -477,6 +478,29 @@ func (c *ClickUpClient) GetListCustomFields(listId string) ([]ClickUpCustomField
 	}
 
 	return clickupResp.Fields, nil
+}
+
+// GetSourceContainers returns the lists of a ClickUp space (used as source containers).
+func (c *ClickUpClient) GetSourceContainers(spaceId string) ([]client.Container, error) {
+	lists, err := c.GetLists(spaceId)
+	if err != nil {
+		return nil, err
+	}
+	containers := make([]client.Container, len(lists))
+	for i, l := range lists {
+		containers[i] = client.Container{ID: l.Id, Name: l.Name}
+	}
+	return containers, nil
+}
+
+// GetTasksByContainer returns tasks in a ClickUp list.
+func (c *ClickUpClient) GetTasksByContainer(listId string) ([]models.Task, error) {
+	return c.GetTasks(listId)
+}
+
+// GetDestContainers returns the lists of a ClickUp space (used as destination containers).
+func (c *ClickUpClient) GetDestContainers(spaceId string) ([]client.Container, error) {
+	return c.GetSourceContainers(spaceId)
 }
 
 func (c *ClickUpClient) GetListStatuses(listId string) ([]string, error) {

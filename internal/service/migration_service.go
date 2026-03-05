@@ -14,10 +14,11 @@ import (
 )
 
 type MigrationService struct {
-	providers            map[string]client.IntegrationProvider
-	migrationRepo        *repository.MigrationRepository
-	taskMappingRepo      *repository.TaskMappingRepository
-	migrationMappingRepo *repository.MigrationMappingRepository
+	providers              map[string]client.IntegrationProvider
+	migrationRepo          *repository.MigrationRepository
+	taskMappingRepo        *repository.TaskMappingRepository
+	migrationMappingRepo   *repository.MigrationMappingRepository
+	containerMappingRepo   *repository.ContainerMappingRepository
 }
 
 func NewMigrationService(
@@ -25,12 +26,14 @@ func NewMigrationService(
 	migrationRepo *repository.MigrationRepository,
 	taskMappingRepo *repository.TaskMappingRepository,
 	migrationMappingRepo *repository.MigrationMappingRepository,
+	containerMappingRepo *repository.ContainerMappingRepository,
 ) *MigrationService {
 	return &MigrationService{
 		providers:            providers,
 		migrationRepo:        migrationRepo,
 		taskMappingRepo:      taskMappingRepo,
 		migrationMappingRepo: migrationMappingRepo,
+		containerMappingRepo: containerMappingRepo,
 	}
 }
 
@@ -58,6 +61,19 @@ type CustomFieldSelection struct {
 	Enabled bool
 }
 
+type ContainerMappingItem struct {
+	SourceID   string
+	SourceName string
+	DestID     *string
+	DestName   *string
+	Status     string
+}
+
+type AvailableContainer struct {
+	ID   string
+	Name string
+}
+
 type MappingsState struct {
 	Status                  []MappingItem
 	Priority                []MappingItem
@@ -66,12 +82,20 @@ type MappingsState struct {
 	AvailableDestStatuses   []string
 	AvailableDestPriorities []string
 	DiscoveredCustomFields  []CustomFieldState
+	ContainerMappings       []ContainerMappingItem
+	AvailableDestContainers []AvailableContainer
 }
 
 type MappingInput struct {
 	Type        repository.MappingType
 	SourceValue string
 	DestValue   string
+}
+
+type ContainerMappingInput struct {
+	SourceID   string
+	DestID     string
+	DestName   string
 }
 
 func (s *MigrationService) getProvider(name string) (client.IntegrationProvider, error) {
@@ -139,12 +163,47 @@ func (s *MigrationService) discoverCustomFields(
 	if !ok {
 		return []models.CustomFieldDefinition{}
 	}
-	defs, err := fp.GetFieldDefinitions(sourceProjectID)
-	if err != nil {
-		slog.Warn("could not discover custom fields from source, skipping", "error", err)
-		return []models.CustomFieldDefinition{}
+
+	listIDs := s.resolveListIDs(sourceClient, sourceProjectID)
+
+	seen := map[string]struct{}{}
+	var allDefs []models.CustomFieldDefinition
+	for _, lid := range listIDs {
+		defs, err := fp.GetFieldDefinitions(lid)
+		if err != nil {
+			slog.Warn("could not discover custom fields for list, skipping", "listId", lid, "error", err)
+			continue
+		}
+		for _, d := range defs {
+			if _, dup := seen[d.ID]; !dup {
+				seen[d.ID] = struct{}{}
+				allDefs = append(allDefs, d)
+			}
+		}
 	}
-	return defs
+	return allDefs
+}
+
+// resolveListIDs returns the individual list IDs to query for custom fields.
+// If the provider supports containers (ClickUp space → lists), it fetches
+// the lists from the space. Otherwise it returns the ID as-is.
+func (s *MigrationService) resolveListIDs(provider client.IntegrationProvider, sourceProjectID string) []string {
+	if provider == nil {
+		return []string{sourceProjectID}
+	}
+	cp, ok := provider.(client.ContainerProvider)
+	if !ok {
+		return []string{sourceProjectID}
+	}
+	containers, err := cp.GetSourceContainers(sourceProjectID)
+	if err != nil || len(containers) == 0 {
+		return []string{sourceProjectID}
+	}
+	ids := make([]string, len(containers))
+	for i, c := range containers {
+		ids[i] = c.ID
+	}
+	return ids
 }
 
 func mapStatus(taskStatus string, mappings []MappingItem) string {
@@ -168,16 +227,7 @@ func mapPriority(taskPriority string, mappings []MappingItem) string {
 	return ""
 }
 
-func (s *MigrationService) discoverAndUpsertMappings(
-	migrationID int64,
-	sourceClient client.TaskClient,
-	sourceProjectId string,
-) ([]models.Task, error) {
-	tasks, err := sourceClient.GetTasks(sourceProjectId)
-	if err != nil {
-		return nil, fmt.Errorf("get tasks from source: %w", err)
-	}
-
+func (s *MigrationService) upsertTaskMappings(migrationID int64, tasks []models.Task) error {
 	uniqueStatuses := make(map[string]struct{})
 	uniquePriorities := make(map[string]struct{})
 	uniqueAssignees := make(map[string]models.TaskAssignee)
@@ -197,34 +247,62 @@ func (s *MigrationService) discoverAndUpsertMappings(
 	}
 
 	for status := range uniqueStatuses {
-		if err := s.migrationMappingRepo.UpsertPending(
-			migrationID, repository.MappingTypeStatus, status, nil,
-		); err != nil {
-			return nil, fmt.Errorf("upsert status mapping: %w", err)
+		if err := s.migrationMappingRepo.UpsertPending(migrationID, repository.MappingTypeStatus, status, nil); err != nil {
+			return fmt.Errorf("upsert status mapping: %w", err)
 		}
 	}
-
 	for priority := range uniquePriorities {
-		if err := s.migrationMappingRepo.UpsertPending(
-			migrationID, repository.MappingTypePriority, priority, nil,
-		); err != nil {
-			return nil, fmt.Errorf("upsert priority mapping: %w", err)
+		if err := s.migrationMappingRepo.UpsertPending(migrationID, repository.MappingTypePriority, priority, nil); err != nil {
+			return fmt.Errorf("upsert priority mapping: %w", err)
 		}
 	}
-
 	for _, assignee := range uniqueAssignees {
-		metadata := &repository.AssigneeMetadata{
-			Name:  assignee.Name,
-			Email: assignee.Email,
-		}
-		if err := s.migrationMappingRepo.UpsertPending(
-			migrationID, repository.MappingTypeAssignee, assignee.ID, metadata,
-		); err != nil {
-			return nil, fmt.Errorf("upsert assignee mapping: %w", err)
+		metadata := &repository.AssigneeMetadata{Name: assignee.Name, Email: assignee.Email}
+		if err := s.migrationMappingRepo.UpsertPending(migrationID, repository.MappingTypeAssignee, assignee.ID, metadata); err != nil {
+			return fmt.Errorf("upsert assignee mapping: %w", err)
 		}
 	}
+	return nil
+}
 
-	return tasks, nil
+// discoverAndUpsertMappingsFromContainers fetches tasks from all containers and discovers unique
+// status/priority/assignee values for mapping. For ClickUp source it also discovers custom fields.
+func (s *MigrationService) discoverAndUpsertMappingsFromContainers(
+	migrationID int64,
+	sourceProvider client.IntegrationProvider,
+	sourceID string,
+	sourcePlatform string,
+) ([]models.Task, error) {
+	cp, hasContainers := sourceProvider.(client.ContainerProvider)
+
+	var allTasks []models.Task
+
+	if hasContainers {
+		containers, err := cp.GetSourceContainers(sourceID)
+		if err != nil {
+			return nil, fmt.Errorf("get source containers for mapping discovery: %w", err)
+		}
+		for _, c := range containers {
+			tasks, err := cp.GetTasksByContainer(c.ID)
+			if err != nil {
+				slog.Warn("could not get tasks for container, skipping", "container", c.Name, "error", err)
+				continue
+			}
+			allTasks = append(allTasks, tasks...)
+		}
+	} else {
+		tasks, err := sourceProvider.GetTasks(sourceID)
+		if err != nil {
+			return nil, fmt.Errorf("get tasks from source: %w", err)
+		}
+		allTasks = tasks
+	}
+
+	if err := s.upsertTaskMappings(migrationID, allTasks); err != nil {
+		return nil, err
+	}
+
+	return allTasks, nil
 }
 
 func (s *MigrationService) loadCustomFieldsState(migrationID int64) []CustomFieldState {
@@ -244,6 +322,55 @@ func (s *MigrationService) loadCustomFieldsState(migrationID int64) []CustomFiel
 	return result
 }
 
+func (s *MigrationService) getDestContainerID(migration repository.Migration) string {
+	if migration.DestSpaceID != "" {
+		return migration.DestSpaceID
+	}
+	return migration.DestListID
+}
+
+func (s *MigrationService) buildContainerMappingsState(migration repository.Migration) ([]ContainerMappingItem, []AvailableContainer, error) {
+	containerMappings, err := s.containerMappingRepo.GetByMigrationID(migration.Id)
+	if err != nil {
+		return nil, nil, fmt.Errorf("get container mappings: %w", err)
+	}
+
+	items := make([]ContainerMappingItem, len(containerMappings))
+	for i, cm := range containerMappings {
+		items[i] = ContainerMappingItem{
+			SourceID:   cm.SourceID,
+			SourceName: cm.SourceName,
+			DestID:     cm.DestID,
+			DestName:   cm.DestName,
+			Status:     cm.Status,
+		}
+	}
+
+	destProvider, err := s.getProvider(migration.Destination)
+	if err != nil {
+		return items, nil, nil
+	}
+
+	cp, ok := destProvider.(client.ContainerProvider)
+	if !ok {
+		return items, nil, nil
+	}
+
+	destContainerID := s.getDestContainerID(migration)
+	destContainers, err := cp.GetDestContainers(destContainerID)
+	if err != nil {
+		slog.Warn("could not fetch dest containers for state", "error", err)
+		return items, nil, nil
+	}
+
+	available := make([]AvailableContainer, len(destContainers))
+	for i, dc := range destContainers {
+		available[i] = AvailableContainer{ID: dc.ID, Name: dc.Name}
+	}
+
+	return items, available, nil
+}
+
 func (s *MigrationService) buildMappingsState(
 	migration repository.Migration,
 ) (*MappingsState, error) {
@@ -257,18 +384,53 @@ func (s *MigrationService) buildMappingsState(
 		return nil, fmt.Errorf("get destination members: %w", err)
 	}
 
-	destStatuses, err := s.getAvailableDestStatuses(migration.Destination, migration.DestListID)
-	if err != nil {
-		return nil, fmt.Errorf("get destination statuses: %w", err)
+	// For ClickUp destination, use the first mapped container list ID for status discovery.
+	// If no container is mapped yet, statuses are deferred (empty list — OK).
+	// For Asana destination, DestListID is the project GID and statuses are fixed.
+	var destStatuses []string
+	var destPriorities []string
+
+	if migration.Destination == "clickup" {
+		statusListID := ""
+		if cms, err := s.containerMappingRepo.GetByMigrationID(migration.Id); err == nil {
+			for _, cm := range cms {
+				if cm.DestID != nil {
+					statusListID = *cm.DestID
+					break
+				}
+			}
+		}
+		if statusListID != "" {
+			if ss, err := s.getAvailableDestStatuses(migration.Destination, statusListID); err == nil {
+				destStatuses = ss
+			} else {
+				slog.Warn("could not fetch dest statuses, will return empty", "error", err)
+			}
+			destPriorities = s.getAvailableDestPrioritiesForState(migration.Destination, statusListID)
+		} else {
+			destPriorities = getAvailableDestPriorities(migration.Destination)
+		}
+	} else {
+		if ss, err := s.getAvailableDestStatuses(migration.Destination, migration.DestListID); err != nil {
+			return nil, fmt.Errorf("get destination statuses: %w", err)
+		} else {
+			destStatuses = ss
+		}
+		destPriorities = s.getAvailableDestPrioritiesForState(migration.Destination, migration.DestListID)
 	}
 
-	destPriorities := s.getAvailableDestPrioritiesForState(migration.Destination, migration.DestListID)
+	containerItems, availableContainers, err := s.buildContainerMappingsState(migration)
+	if err != nil {
+		return nil, fmt.Errorf("build container mappings state: %w", err)
+	}
 
 	state := &MappingsState{
 		AvailableDestMembers:    destMembers,
 		AvailableDestStatuses:   destStatuses,
 		AvailableDestPriorities: destPriorities,
 		DiscoveredCustomFields:  s.loadCustomFieldsState(migration.Id),
+		ContainerMappings:       containerItems,
+		AvailableDestContainers: availableContainers,
 	}
 
 	for _, m := range allMappings {
@@ -295,15 +457,25 @@ func (s *MigrationService) buildMappingsState(
 	return state, nil
 }
 
-func (s *MigrationService) CreateMigration(
-	source, destination, sourceProjectId, destListId, destWorkspaceId string,
-) (int64, *MappingsState, error) {
+// CreateMigrationInput holds parameters for creating a migration.
+// DestSpaceID is the ClickUp space GID (when dest=clickup) or empty (when dest=asana, use DestListID as project GID).
+type CreateMigrationInput struct {
+	Source          string
+	Destination     string
+	SourceProjectID string // Asana project GID or ClickUp space GID
+	DestListID      string // Asana project GID when dest=asana (used for project ID)
+	DestWorkspaceID string
+	DestSpaceID     string // ClickUp space GID when dest=clickup
+}
+
+func (s *MigrationService) CreateMigration(input CreateMigrationInput) (int64, *MappingsState, error) {
 	migration := &repository.Migration{
-		Source:          source,
-		Destination:     destination,
-		SourceProjectID: sourceProjectId,
-		DestListID:      destListId,
-		DestWorkspaceID: destWorkspaceId,
+		Source:          input.Source,
+		Destination:     input.Destination,
+		SourceProjectID: input.SourceProjectID,
+		DestListID:      input.DestListID,
+		DestWorkspaceID: input.DestWorkspaceID,
+		DestSpaceID:     input.DestSpaceID,
 		Status:          "pending_configuration",
 	}
 
@@ -312,15 +484,30 @@ func (s *MigrationService) CreateMigration(
 		return 0, nil, fmt.Errorf("create migration: %w", err)
 	}
 
-	sourceProvider, err := s.getProvider(source)
+	sourceProvider, err := s.getProvider(input.Source)
 	if err != nil {
 		return 0, nil, fmt.Errorf("get source provider: %w", err)
 	}
-	if _, err := s.discoverAndUpsertMappings(migrationID, sourceProvider, sourceProjectId); err != nil {
+
+	// Discover source containers (Asana sections or ClickUp lists)
+	if cp, ok := sourceProvider.(client.ContainerProvider); ok {
+		containers, err := cp.GetSourceContainers(input.SourceProjectID)
+		if err != nil {
+			return 0, nil, fmt.Errorf("discover source containers: %w", err)
+		}
+		for _, c := range containers {
+			if err := s.containerMappingRepo.Upsert(migrationID, c.ID, c.Name); err != nil {
+				return 0, nil, fmt.Errorf("upsert container mapping: %w", err)
+			}
+		}
+	}
+
+	// Discover status/priority/assignee mappings using all tasks across containers
+	if _, err := s.discoverAndUpsertMappingsFromContainers(migrationID, sourceProvider, input.SourceProjectID, input.Source); err != nil {
 		return 0, nil, fmt.Errorf("discover mappings: %w", err)
 	}
 
-	for _, f := range s.discoverCustomFields(sourceProvider, sourceProjectId) {
+	for _, f := range s.discoverCustomFields(sourceProvider, input.SourceProjectID) {
 		if err := s.migrationMappingRepo.UpsertCustomField(migrationID, f.ID, f.Name, f.ClickUpType); err != nil {
 			slog.Warn("could not persist custom field", "field", f.Name, "error", err)
 		}
@@ -345,7 +532,20 @@ func (s *MigrationService) SyncMappings(migrationID int64) (*MappingsState, erro
 	if err != nil {
 		return nil, fmt.Errorf("get source provider: %w", err)
 	}
-	if _, err := s.discoverAndUpsertMappings(migrationID, sourceProvider, migration.SourceProjectID); err != nil {
+
+	if cp, ok := sourceProvider.(client.ContainerProvider); ok {
+		containers, err := cp.GetSourceContainers(migration.SourceProjectID)
+		if err != nil {
+			return nil, fmt.Errorf("sync containers: %w", err)
+		}
+		for _, c := range containers {
+			if err := s.containerMappingRepo.Upsert(migrationID, c.ID, c.Name); err != nil {
+				slog.Warn("could not upsert container on sync", "container", c.Name, "error", err)
+			}
+		}
+	}
+
+	if _, err := s.discoverAndUpsertMappingsFromContainers(migrationID, sourceProvider, migration.SourceProjectID, migration.Source); err != nil {
 		return nil, fmt.Errorf("sync mappings: %w", err)
 	}
 
@@ -361,6 +561,7 @@ func (s *MigrationService) SyncMappings(migrationID int64) (*MappingsState, erro
 func (s *MigrationService) SaveMappings(
 	migrationID int64,
 	mappings []MappingInput,
+	containerMappings []ContainerMappingInput,
 	customFieldSelections []CustomFieldSelection,
 ) (*MappingsState, error) {
 	migration, err := s.migrationRepo.GetMigration(migrationID)
@@ -368,10 +569,14 @@ func (s *MigrationService) SaveMappings(
 		return nil, fmt.Errorf("get migration: %w", err)
 	}
 
+	for _, cm := range containerMappings {
+		if err := s.containerMappingRepo.UpdateMapping(migrationID, cm.SourceID, cm.DestID, cm.DestName); err != nil {
+			return nil, fmt.Errorf("save container mapping %s: %w", cm.SourceID, err)
+		}
+	}
+
 	for _, m := range mappings {
-		if err := s.migrationMappingRepo.UpdateMapping(
-			migrationID, m.Type, m.SourceValue, m.DestValue,
-		); err != nil {
+		if err := s.migrationMappingRepo.UpdateMapping(migrationID, m.Type, m.SourceValue, m.DestValue); err != nil {
 			return nil, fmt.Errorf("save mapping %s/%s: %w", m.Type, m.SourceValue, err)
 		}
 	}
@@ -382,11 +587,16 @@ func (s *MigrationService) SaveMappings(
 		}
 	}
 
-	allMapped, err := s.migrationMappingRepo.AllMapped(migrationID)
+	fieldsMapped, err := s.migrationMappingRepo.AllMapped(migrationID)
 	if err != nil {
-		return nil, fmt.Errorf("check all mapped: %w", err)
+		return nil, fmt.Errorf("check all field mappings done: %w", err)
 	}
-	if allMapped {
+	containersMapped, err := s.containerMappingRepo.AllMapped(migrationID)
+	if err != nil {
+		return nil, fmt.Errorf("check all container mappings done: %w", err)
+	}
+
+	if fieldsMapped && containersMapped {
 		if err := s.migrationRepo.UpdateStatus(migrationID, "ready_to_start"); err != nil {
 			return nil, fmt.Errorf("update migration status: %w", err)
 		}
@@ -405,7 +615,15 @@ func (s *MigrationService) StartMigration(migrationID int64) error {
 		return fmt.Errorf("check mappings: %w", err)
 	}
 	if !allMapped {
-		return fmt.Errorf("there are pending mappings — configure all before starting")
+		return fmt.Errorf("there are pending field mappings — configure all before starting")
+	}
+
+	containersMapped, err := s.containerMappingRepo.AllMapped(migrationID)
+	if err != nil {
+		return fmt.Errorf("check container mappings: %w", err)
+	}
+	if !containersMapped {
+		return fmt.Errorf("there are unmapped sections/lists — map all containers before starting")
 	}
 
 	migration, err := s.migrationRepo.GetMigration(migrationID)
@@ -435,11 +653,47 @@ func (s *MigrationService) executeMigration(
 	destClient client.TaskClient,
 	migration repository.Migration,
 ) {
-	tasks, err := sourceClient.GetTasks(migration.SourceProjectID)
+	// Load container mappings to iterate per section/list
+	containerMappings, err := s.containerMappingRepo.GetByMigrationID(migration.Id)
 	if err != nil {
 		s.migrationRepo.Complete(migration.Id, "failed")
-		slog.Error("failed to fetch tasks", "migration_id", migration.Id, "error", err)
+		slog.Error("failed to load container mappings", "migration_id", migration.Id, "error", err)
 		return
+	}
+
+	cp, hasContainerProvider := sourceClient.(client.ContainerProvider)
+
+	// Fetch all tasks across containers
+	var tasks []models.Task
+	if hasContainerProvider && len(containerMappings) > 0 {
+		for _, cm := range containerMappings {
+			if cm.DestID == nil {
+				slog.Warn("container has no dest mapping, skipping", "source_container", cm.SourceName)
+				continue
+			}
+			containerTasks, err := cp.GetTasksByContainer(cm.SourceID)
+			if err != nil {
+				s.migrationRepo.Complete(migration.Id, "failed")
+				slog.Error("failed to fetch tasks for container", "container", cm.SourceName, "error", err)
+				return
+			}
+			// Tag each task with its dest container ID for routing
+			for i := range containerTasks {
+				containerTasks[i].DestContainerID = *cm.DestID
+				// For Asana dest with section, encode as "projectId|sectionId"
+				if migration.Destination == "asana" {
+					containerTasks[i].DestContainerID = migration.DestListID + "|" + *cm.DestID
+				}
+			}
+			tasks = append(tasks, containerTasks...)
+		}
+	} else {
+		tasks, err = sourceClient.GetTasks(migration.SourceProjectID)
+		if err != nil {
+			s.migrationRepo.Complete(migration.Id, "failed")
+			slog.Error("failed to fetch tasks", "migration_id", migration.Id, "error", err)
+			return
+		}
 	}
 
 	s.migrationRepo.UpdateTotalTasks(migration.Id, len(tasks))
@@ -475,9 +729,11 @@ func (s *MigrationService) executeMigration(
 	cfMapping := map[string]customFieldEntry{}
 	if fp, ok := sourceClient.(client.FieldProvider); ok {
 		if fc, ok := destClient.(client.FieldCreator); ok {
+			sourceProvider, _ := sourceClient.(client.IntegrationProvider)
+			listIDs := s.resolveListIDs(sourceProvider, migration.SourceProjectID)
 			cfMapping = s.buildCustomFieldMapping(
 				fp, fc,
-				migration.SourceProjectID,
+				listIDs,
 				migration.DestWorkspaceID,
 				migration.DestListID,
 			)
@@ -542,7 +798,11 @@ func (s *MigrationService) executeMigration(
 
 		task.CustomFields = convertTaskCustomFields(task.CustomFields, cfMapping)
 
-		created, err := destClient.CreateTask(migration.DestListID, migration.DestWorkspaceID, task)
+		destContainerID := task.DestContainerID
+		if destContainerID == "" {
+			destContainerID = migration.DestListID
+		}
+		created, err := destClient.CreateTask(destContainerID, migration.DestWorkspaceID, task)
 		if err != nil {
 			s.taskMappingRepo.Create(&repository.TaskMapping{
 				MigrationID:  migration.Id,
@@ -601,12 +861,23 @@ type customFieldEntry struct {
 func (s *MigrationService) buildCustomFieldMapping(
 	fp client.FieldProvider,
 	fc client.FieldCreator,
-	sourceListId, destWorkspaceId, destProjectId string,
+	sourceListIDs []string,
+	destWorkspaceId, destProjectId string,
 ) map[string]customFieldEntry {
-	defs, err := fp.GetFieldDefinitions(sourceListId)
-	if err != nil {
-		slog.Warn("could not get field definitions from source, skipping custom fields", "error", err)
-		return map[string]customFieldEntry{}
+	seen := map[string]struct{}{}
+	var defs []models.CustomFieldDefinition
+	for _, lid := range sourceListIDs {
+		d, err := fp.GetFieldDefinitions(lid)
+		if err != nil {
+			slog.Warn("could not get field definitions for list, skipping", "listId", lid, "error", err)
+			continue
+		}
+		for _, def := range d {
+			if _, dup := seen[def.ID]; !dup {
+				seen[def.ID] = struct{}{}
+				defs = append(defs, def)
+			}
+		}
 	}
 
 	mapping := make(map[string]customFieldEntry, len(defs))

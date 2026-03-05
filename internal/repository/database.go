@@ -33,6 +33,7 @@ func createTables(db *sql.DB) error {
         source_project_id TEXT NOT NULL,
         dest_list_id     TEXT NOT NULL,
         dest_workspace_id TEXT,
+        dest_space_id    TEXT,
         status           TEXT NOT NULL,
         total_tasks      INTEGER DEFAULT 0,
         completed_tasks  INTEGER DEFAULT 0,
@@ -53,6 +54,18 @@ func createTables(db *sql.DB) error {
         updated_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (migration_id) REFERENCES migrations(id),
         UNIQUE (migration_id, type, source_value)
+    );
+
+    CREATE TABLE IF NOT EXISTS container_mappings (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        migration_id INTEGER NOT NULL,
+        source_id    TEXT NOT NULL,
+        source_name  TEXT NOT NULL,
+        dest_id      TEXT,
+        dest_name    TEXT,
+        status       TEXT NOT NULL DEFAULT 'pending',
+        FOREIGN KEY (migration_id) REFERENCES migrations(id),
+        UNIQUE (migration_id, source_id)
     );
 
     CREATE TABLE IF NOT EXISTS task_mappings (

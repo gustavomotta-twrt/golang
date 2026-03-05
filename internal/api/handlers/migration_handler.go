@@ -21,8 +21,9 @@ func NewMigrationHandler(migrationService *service.MigrationService) *MigrationH
 type CreateMigrationRequestBody struct {
 	Source          string `json:"source"`
 	Destination     string `json:"destination"`
-	SourceProjectId string `json:"source_project_id"`
-	DestListId      string `json:"dest_list_id"`
+	SourceProjectId string `json:"source_project_id"` // Asana project GID or ClickUp space GID
+	DestListId      string `json:"dest_list_id"`       // Asana project GID when dest=asana
+	DestSpaceId     string `json:"dest_space_id"`      // ClickUp space GID when dest=clickup
 	DestWorkspaceId string `json:"dest_workspace_id"`
 }
 
@@ -32,6 +33,11 @@ type SaveMappingsRequestBody struct {
 		SourceValue string `json:"source_value"`
 		DestValue   string `json:"dest_value"`
 	} `json:"mappings"`
+	ContainerMappings []struct {
+		SourceID string `json:"source_id"`
+		DestID   string `json:"dest_id"`
+		DestName string `json:"dest_name"`
+	} `json:"container_mappings"`
 	CustomFieldSelections []struct {
 		FieldID string `json:"field_id"`
 		Enabled bool   `json:"enabled"`
@@ -85,14 +91,27 @@ func (h *MigrationHandler) CreateMigration(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, "dest_workspace_id is required")
 		return
 	}
+	if req.Source == "clickup" && req.SourceProjectId == "" {
+		writeError(w, http.StatusBadRequest, "source_project_id (space GID) is required for ClickUp source")
+		return
+	}
+	if req.Destination == "clickup" && req.DestSpaceId == "" {
+		writeError(w, http.StatusBadRequest, "dest_space_id is required for ClickUp destination")
+		return
+	}
+	if req.Destination == "asana" && req.DestListId == "" {
+		writeError(w, http.StatusBadRequest, "dest_list_id (project GID) is required for Asana destination")
+		return
+	}
 
-	migrationID, state, err := h.migrationService.CreateMigration(
-		req.Source,
-		req.Destination,
-		req.SourceProjectId,
-		req.DestListId,
-		req.DestWorkspaceId,
-	)
+	migrationID, state, err := h.migrationService.CreateMigration(service.CreateMigrationInput{
+		Source:          req.Source,
+		Destination:     req.Destination,
+		SourceProjectID: req.SourceProjectId,
+		DestListID:      req.DestListId,
+		DestWorkspaceID: req.DestWorkspaceId,
+		DestSpaceID:     req.DestSpaceId,
+	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "error creating migration: "+err.Error())
 		return
@@ -142,11 +161,6 @@ func (h *MigrationHandler) SaveMappings(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if len(req.Mappings) == 0 {
-		writeError(w, http.StatusBadRequest, "mappings cannot be empty")
-		return
-	}
-
 	inputs := make([]service.MappingInput, 0, len(req.Mappings))
 	for _, m := range req.Mappings {
 		if m.SourceValue == "" || m.DestValue == "" {
@@ -160,6 +174,19 @@ func (h *MigrationHandler) SaveMappings(w http.ResponseWriter, r *http.Request) 
 		})
 	}
 
+	containerInputs := make([]service.ContainerMappingInput, 0, len(req.ContainerMappings))
+	for _, cm := range req.ContainerMappings {
+		if cm.SourceID == "" || cm.DestID == "" {
+			writeError(w, http.StatusBadRequest, "container source_id and dest_id are required")
+			return
+		}
+		containerInputs = append(containerInputs, service.ContainerMappingInput{
+			SourceID: cm.SourceID,
+			DestID:   cm.DestID,
+			DestName: cm.DestName,
+		})
+	}
+
 	cfSelections := make([]service.CustomFieldSelection, 0, len(req.CustomFieldSelections))
 	for _, s := range req.CustomFieldSelections {
 		cfSelections = append(cfSelections, service.CustomFieldSelection{
@@ -168,7 +195,7 @@ func (h *MigrationHandler) SaveMappings(w http.ResponseWriter, r *http.Request) 
 		})
 	}
 
-	state, err := h.migrationService.SaveMappings(id, inputs, cfSelections)
+	state, err := h.migrationService.SaveMappings(id, inputs, containerInputs, cfSelections)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "error saving mappings: "+err.Error())
 		return
