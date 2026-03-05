@@ -67,6 +67,7 @@ type ContainerMappingItem struct {
 	DestID     *string
 	DestName   *string
 	Status     string
+	Enabled    bool
 }
 
 type AvailableContainer struct {
@@ -93,9 +94,10 @@ type MappingInput struct {
 }
 
 type ContainerMappingInput struct {
-	SourceID   string
-	DestID     string
-	DestName   string
+	SourceID string
+	DestID   string
+	DestName string
+	Enabled  bool
 }
 
 func (s *MigrationService) getProvider(name string) (client.IntegrationProvider, error) {
@@ -343,6 +345,7 @@ func (s *MigrationService) buildContainerMappingsState(migration repository.Migr
 			DestID:     cm.DestID,
 			DestName:   cm.DestName,
 			Status:     cm.Status,
+			Enabled:    cm.Enabled,
 		}
 	}
 
@@ -570,7 +573,7 @@ func (s *MigrationService) SaveMappings(
 	}
 
 	for _, cm := range containerMappings {
-		if err := s.containerMappingRepo.UpdateMapping(migrationID, cm.SourceID, cm.DestID, cm.DestName); err != nil {
+		if err := s.containerMappingRepo.UpdateMapping(migrationID, cm.SourceID, cm.DestID, cm.DestName, cm.Enabled); err != nil {
 			return nil, fmt.Errorf("save container mapping %s: %w", cm.SourceID, err)
 		}
 	}
@@ -667,6 +670,10 @@ func (s *MigrationService) executeMigration(
 	var tasks []models.Task
 	if hasContainerProvider && len(containerMappings) > 0 {
 		for _, cm := range containerMappings {
+			if !cm.Enabled {
+				slog.Info("container disabled, skipping", "source_container", cm.SourceName)
+				continue
+			}
 			if cm.DestID == nil {
 				slog.Warn("container has no dest mapping, skipping", "source_container", cm.SourceName)
 				continue

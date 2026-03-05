@@ -3,6 +3,7 @@ package repository
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 
 	_ "modernc.org/sqlite"
 )
@@ -18,6 +19,10 @@ func InitDB(dbPath string) (*sql.DB, error) {
 	}
 
 	if err := createTables(db); err != nil {
+		return nil, err
+	}
+
+	if err := runMigrations(db); err != nil {
 		return nil, err
 	}
 
@@ -64,6 +69,7 @@ func createTables(db *sql.DB) error {
         dest_id      TEXT,
         dest_name    TEXT,
         status       TEXT NOT NULL DEFAULT 'pending',
+        enabled      INTEGER NOT NULL DEFAULT 1,
         FOREIGN KEY (migration_id) REFERENCES migrations(id),
         UNIQUE (migration_id, source_id)
     );
@@ -82,6 +88,20 @@ func createTables(db *sql.DB) error {
 
 	if _, err := db.Exec(schema); err != nil {
 		return fmt.Errorf("create tables: %w", err)
+	}
+	return nil
+}
+
+func runMigrations(db *sql.DB) error {
+	migrations := []string{
+		`ALTER TABLE container_mappings ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1`,
+	}
+	for _, m := range migrations {
+		if _, err := db.Exec(m); err != nil {
+			if !strings.Contains(err.Error(), "duplicate column name") {
+				return fmt.Errorf("run migration: %w", err)
+			}
+		}
 	}
 	return nil
 }

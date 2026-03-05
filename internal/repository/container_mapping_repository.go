@@ -6,13 +6,14 @@ import (
 )
 
 type ContainerMapping struct {
-	ID         int64
+	ID          int64
 	MigrationID int64
-	SourceID   string
-	SourceName string
-	DestID     *string
-	DestName   *string
-	Status     string
+	SourceID    string
+	SourceName  string
+	DestID      *string
+	DestName    *string
+	Status      string
+	Enabled     bool
 }
 
 type ContainerMappingRepository struct {
@@ -34,12 +35,24 @@ func (r *ContainerMappingRepository) Upsert(migrationID int64, sourceID, sourceN
 	return nil
 }
 
-func (r *ContainerMappingRepository) UpdateMapping(migrationID int64, sourceID, destID, destName string) error {
+func (r *ContainerMappingRepository) UpdateMapping(migrationID int64, sourceID, destID, destName string, enabled bool) error {
+	var status string
+	var dID, dName *string
+	if !enabled {
+		status = "skipped"
+	} else if destID != "" {
+		status = "mapped"
+		dID = &destID
+		dName = &destName
+	} else {
+		status = "pending"
+	}
+
 	result, err := r.db.Exec(`
 		UPDATE container_mappings
-		SET dest_id = ?, dest_name = ?, status = 'mapped'
+		SET dest_id = ?, dest_name = ?, status = ?, enabled = ?
 		WHERE migration_id = ? AND source_id = ?
-	`, destID, destName, migrationID, sourceID)
+	`, dID, dName, status, enabled, migrationID, sourceID)
 	if err != nil {
 		return fmt.Errorf("update container mapping: %w", err)
 	}
@@ -55,7 +68,7 @@ func (r *ContainerMappingRepository) UpdateMapping(migrationID int64, sourceID, 
 
 func (r *ContainerMappingRepository) GetByMigrationID(migrationID int64) ([]ContainerMapping, error) {
 	rows, err := r.db.Query(`
-		SELECT id, migration_id, source_id, source_name, dest_id, dest_name, status
+		SELECT id, migration_id, source_id, source_name, dest_id, dest_name, status, enabled
 		FROM container_mappings
 		WHERE migration_id = ?
 		ORDER BY id ASC
@@ -69,7 +82,8 @@ func (r *ContainerMappingRepository) GetByMigrationID(migrationID int64) ([]Cont
 	for rows.Next() {
 		var m ContainerMapping
 		var destID, destName sql.NullString
-		if err := rows.Scan(&m.ID, &m.MigrationID, &m.SourceID, &m.SourceName, &destID, &destName, &m.Status); err != nil {
+		var enabled int
+		if err := rows.Scan(&m.ID, &m.MigrationID, &m.SourceID, &m.SourceName, &destID, &destName, &m.Status, &enabled); err != nil {
 			return nil, fmt.Errorf("scan container mapping: %w", err)
 		}
 		if destID.Valid {
@@ -78,6 +92,7 @@ func (r *ContainerMappingRepository) GetByMigrationID(migrationID int64) ([]Cont
 		if destName.Valid {
 			m.DestName = &destName.String
 		}
+		m.Enabled = enabled != 0
 		mappings = append(mappings, m)
 	}
 	return mappings, rows.Err()
@@ -87,7 +102,7 @@ func (r *ContainerMappingRepository) AllMapped(migrationID int64) (bool, error) 
 	var count int
 	err := r.db.QueryRow(`
 		SELECT COUNT(*) FROM container_mappings
-		WHERE migration_id = ? AND status = 'pending'
+		WHERE migration_id = ? AND enabled = 1 AND status = 'pending'
 	`, migrationID).Scan(&count)
 	if err != nil {
 		return false, fmt.Errorf("check all containers mapped: %w", err)

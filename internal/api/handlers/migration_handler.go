@@ -37,6 +37,7 @@ type SaveMappingsRequestBody struct {
 		SourceID string `json:"source_id"`
 		DestID   string `json:"dest_id"`
 		DestName string `json:"dest_name"`
+		Enabled  bool   `json:"enabled"`
 	} `json:"container_mappings"`
 	CustomFieldSelections []struct {
 		FieldID string `json:"field_id"`
@@ -176,14 +177,19 @@ func (h *MigrationHandler) SaveMappings(w http.ResponseWriter, r *http.Request) 
 
 	containerInputs := make([]service.ContainerMappingInput, 0, len(req.ContainerMappings))
 	for _, cm := range req.ContainerMappings {
-		if cm.SourceID == "" || cm.DestID == "" {
-			writeError(w, http.StatusBadRequest, "container source_id and dest_id are required")
+		if cm.SourceID == "" {
+			writeError(w, http.StatusBadRequest, "container source_id is required")
+			return
+		}
+		if cm.Enabled && cm.DestID == "" {
+			writeError(w, http.StatusBadRequest, "container dest_id is required when enabled")
 			return
 		}
 		containerInputs = append(containerInputs, service.ContainerMappingInput{
 			SourceID: cm.SourceID,
 			DestID:   cm.DestID,
 			DestName: cm.DestName,
+			Enabled:  cm.Enabled,
 		})
 	}
 
