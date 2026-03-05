@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
@@ -738,6 +739,17 @@ func (s *MigrationService) executeMigration(
 	destClient client.TaskClient,
 	migration repository.Migration,
 ) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("panic in executeMigration",
+				"migration_id", migration.Id,
+				"panic", r,
+				"stack", string(debug.Stack()),
+			)
+			s.migrationRepo.Complete(migration.Id, "failed")
+		}
+	}()
+
 	containerMappings, err := s.containerMappingRepo.GetByMigrationID(migration.Id)
 	if err != nil {
 		s.migrationRepo.Complete(migration.Id, "failed")
