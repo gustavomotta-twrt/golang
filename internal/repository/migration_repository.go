@@ -6,6 +6,17 @@ import (
 	"time"
 )
 
+type MigrationStatus string
+
+const (
+	MigrationStatusPendingConfiguration MigrationStatus = "pending_configuration"
+	MigrationStatusReadyToStart         MigrationStatus = "ready_to_start"
+	MigrationStatusRunning              MigrationStatus = "running"
+	MigrationStatusCompleted            MigrationStatus = "completed"
+	MigrationStatusCompletedWithErrors  MigrationStatus = "completed_with_errors"
+	MigrationStatusFailed               MigrationStatus = "failed"
+)
+
 type Migration struct {
 	Id              int64
 	Source          string
@@ -14,7 +25,7 @@ type Migration struct {
 	DestListID      string
 	DestWorkspaceID string
 	DestSpaceID     string // ClickUp space GID when destination is ClickUp
-	Status          string
+	Status          MigrationStatus
 	TotalTasks      int
 	CompletedTasks  int
 	FailedTasks     int
@@ -63,7 +74,7 @@ func (r *MigrationRepository) UpdateProgress(id int64, completed, failed int) er
 	return nil
 }
 
-func (r *MigrationRepository) UpdateStatus(id int64, status string) error {
+func (r *MigrationRepository) UpdateStatus(id int64, status MigrationStatus) error {
 	query := `UPDATE migrations SET status = ? WHERE id = ?`
 	_, err := r.db.Exec(query, status, id)
 	if err != nil {
@@ -72,7 +83,7 @@ func (r *MigrationRepository) UpdateStatus(id int64, status string) error {
 	return nil
 }
 
-func (r *MigrationRepository) Complete(id int64, status string) error {
+func (r *MigrationRepository) Complete(id int64, status MigrationStatus) error {
 	query := `UPDATE migrations SET status = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ?`
 	_, err := r.db.Exec(query, status, id)
 	if err != nil {

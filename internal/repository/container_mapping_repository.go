@@ -5,6 +5,14 @@ import (
 	"fmt"
 )
 
+type ContainerMappingStatus string
+
+const (
+	ContainerMappingStatusPending ContainerMappingStatus = "pending"
+	ContainerMappingStatusMapped  ContainerMappingStatus = "mapped"
+	ContainerMappingStatusSkipped ContainerMappingStatus = "skipped"
+)
+
 type ContainerMapping struct {
 	ID          int64
 	MigrationID int64
@@ -12,7 +20,7 @@ type ContainerMapping struct {
 	SourceName  string
 	DestID      *string
 	DestName    *string
-	Status      string
+	Status      ContainerMappingStatus
 	Enabled     bool
 }
 
@@ -36,16 +44,16 @@ func (r *ContainerMappingRepository) Upsert(migrationID int64, sourceID, sourceN
 }
 
 func (r *ContainerMappingRepository) UpdateMapping(migrationID int64, sourceID, destID, destName string, enabled bool) error {
-	var status string
+	var status ContainerMappingStatus
 	var dID, dName *string
 	if !enabled {
-		status = "skipped"
+		status = ContainerMappingStatusSkipped
 	} else if destID != "" {
-		status = "mapped"
+		status = ContainerMappingStatusMapped
 		dID = &destID
 		dName = &destName
 	} else {
-		status = "pending"
+		status = ContainerMappingStatusPending
 	}
 
 	result, err := r.db.Exec(`

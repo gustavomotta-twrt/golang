@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/TWRT/integration-mapper/internal/repository"
 	"github.com/TWRT/integration-mapper/internal/service"
 )
 
@@ -132,7 +133,7 @@ func (h *MigrationHandler) CreateMigration(w http.ResponseWriter, r *http.Reques
 
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"migration_id": migrationID,
-		"status":       "pending_configuration",
+		"status":       repository.MigrationStatusPendingConfiguration,
 		"mappings":     state,
 	})
 }
@@ -284,7 +285,7 @@ func (h *MigrationHandler) StartMigration(w http.ResponseWriter, r *http.Request
 
 	writeJSON(w, http.StatusAccepted, map[string]any{
 		"migration_id": id,
-		"status":       "running",
+		"status":       repository.MigrationStatusRunning,
 		"message":      "Migration started successfully",
 	})
 }

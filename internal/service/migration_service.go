@@ -19,8 +19,8 @@ import (
 type migrationRepo interface {
 	Create(migration *repository.Migration) (int64, error)
 	UpdateProgress(id int64, completed, failed int) error
-	UpdateStatus(id int64, status string) error
-	Complete(id int64, status string) error
+	UpdateStatus(id int64, status repository.MigrationStatus) error
+	Complete(id int64, status repository.MigrationStatus) error
 	UpdateTotalTasks(id int64, totalTasks int) error
 	GetMigration(id int64) (repository.Migration, error)
 	GetMigrations() ([]repository.Migration, error)
@@ -529,7 +529,7 @@ func (s *MigrationService) CreateMigration(input CreateMigrationInput) (int64, *
 		DestListID:      input.DestListID,
 		DestWorkspaceID: input.DestWorkspaceID,
 		DestSpaceID:     input.DestSpaceID,
-		Status:          "pending_configuration",
+		Status:          repository.MigrationStatusPendingConfiguration,
 	}
 
 	migrationID, err := s.migrationRepo.Create(migration)
@@ -694,11 +694,11 @@ func (s *MigrationService) SaveMappings(
 	}
 
 	if fieldsMapped && containersMapped {
-		if err := s.migrationRepo.UpdateStatus(migrationID, "ready_to_start"); err != nil {
+		if err := s.migrationRepo.UpdateStatus(migrationID, repository.MigrationStatusReadyToStart); err != nil {
 			return nil, fmt.Errorf("update migration status: %w", err)
 		}
 	} else {
-		if err := s.migrationRepo.UpdateStatus(migrationID, "pending_configuration"); err != nil {
+		if err := s.migrationRepo.UpdateStatus(migrationID, repository.MigrationStatusPendingConfiguration); err != nil {
 			return nil, fmt.Errorf("update migration status: %w", err)
 		}
 	}
@@ -752,7 +752,7 @@ func (s *MigrationService) StartMigration(migrationID int64) error {
 	if err != nil {
 		return fmt.Errorf("get dest provider: %w", err)
 	}
-	if err := s.migrationRepo.UpdateStatus(migrationID, "running"); err != nil {
+	if err := s.migrationRepo.UpdateStatus(migrationID, repository.MigrationStatusRunning); err != nil {
 		return fmt.Errorf("update migration status: %w", err)
 	}
 
@@ -795,13 +795,13 @@ func (s *MigrationService) executeMigration(
 				"panic", r,
 				"stack", string(debug.Stack()),
 			)
-			s.migrationRepo.Complete(migration.Id, "failed")
+			s.migrationRepo.Complete(migration.Id, repository.MigrationStatusFailed)
 		}
 	}()
 
 	containerMappings, err := s.containerMappingRepo.GetByMigrationID(migration.Id)
 	if err != nil {
-		s.migrationRepo.Complete(migration.Id, "failed")
+		s.migrationRepo.Complete(migration.Id, repository.MigrationStatusFailed)
 		slog.Error("failed to load container mappings", "migration_id", migration.Id, "error", err)
 		return
 	}
@@ -809,7 +809,7 @@ func (s *MigrationService) executeMigration(
 	// Load global assignee mappings (NULL container)
 	globalMappings, err := s.migrationMappingRepo.GetGlobalByMigrationID(migration.Id)
 	if err != nil {
-		s.migrationRepo.Complete(migration.Id, "failed")
+		s.migrationRepo.Complete(migration.Id, repository.MigrationStatusFailed)
 		slog.Error("failed to load global mappings", "migration_id", migration.Id, "error", err)
 		return
 	}
@@ -845,7 +845,7 @@ func (s *MigrationService) executeMigration(
 	if lookup, ok := destClient.(client.PriorityLookup); ok {
 		options, err := lookup.GetProjectCustomFieldOptions(migration.DestListID)
 		if err != nil {
-			s.migrationRepo.Complete(migration.Id, "failed")
+			s.migrationRepo.Complete(migration.Id, repository.MigrationStatusFailed)
 			slog.Error("failed to fetch priority options", "migration_id", migration.Id, "error", err)
 			return
 		}
@@ -879,7 +879,7 @@ func (s *MigrationService) executeMigration(
 
 			containerTasks, err := cp.GetTasksByContainer(cm.SourceID)
 			if err != nil {
-				s.migrationRepo.Complete(migration.Id, "failed")
+				s.migrationRepo.Complete(migration.Id, repository.MigrationStatusFailed)
 				slog.Error("failed to fetch tasks for container", "container", cm.SourceName, "error", err)
 				return
 			}
@@ -956,7 +956,7 @@ func (s *MigrationService) executeMigration(
 					s.taskMappingRepo.Create(&repository.TaskMapping{
 						MigrationID:  migration.Id,
 						SourceTaskID: task.Id,
-						Status:       "failed",
+						Status:       repository.TaskMappingStatusFailed,
 						ErrorMessage: err.Error(),
 					})
 					slog.Error("failed to migrate task", "migration_id", migration.Id, "task_name", task.Name, "error", err)
@@ -966,7 +966,7 @@ func (s *MigrationService) executeMigration(
 						MigrationID:  migration.Id,
 						SourceTaskID: task.Id,
 						DestTaskID:   created.Id,
-						Status:       "success",
+						Status:       repository.TaskMappingStatusSuccess,
 					})
 					slog.Info("task migrated", "migration_id", migration.Id, "dest_task_id", created.Id)
 					successCount++
@@ -978,7 +978,7 @@ func (s *MigrationService) executeMigration(
 		// Non-container source: load all mappings globally
 		allMappings, err := s.migrationMappingRepo.GetGlobalByMigrationID(migration.Id)
 		if err != nil {
-			s.migrationRepo.Complete(migration.Id, "failed")
+			s.migrationRepo.Complete(migration.Id, repository.MigrationStatusFailed)
 			slog.Error("failed to load mappings", "migration_id", migration.Id, "error", err)
 			return
 		}
@@ -995,7 +995,7 @@ func (s *MigrationService) executeMigration(
 
 		tasks, err := sourceClient.GetTasks(migration.SourceProjectID)
 		if err != nil {
-			s.migrationRepo.Complete(migration.Id, "failed")
+			s.migrationRepo.Complete(migration.Id, repository.MigrationStatusFailed)
 			slog.Error("failed to fetch tasks", "migration_id", migration.Id, "error", err)
 			return
 		}
@@ -1040,7 +1040,7 @@ func (s *MigrationService) executeMigration(
 				s.taskMappingRepo.Create(&repository.TaskMapping{
 					MigrationID:  migration.Id,
 					SourceTaskID: task.Id,
-					Status:       "failed",
+					Status:       repository.TaskMappingStatusFailed,
 					ErrorMessage: err.Error(),
 				})
 				slog.Error("failed to migrate task", "migration_id", migration.Id, "task_name", task.Name, "error", err)
@@ -1050,7 +1050,7 @@ func (s *MigrationService) executeMigration(
 					MigrationID:  migration.Id,
 					SourceTaskID: task.Id,
 					DestTaskID:   created.Id,
-					Status:       "success",
+					Status:       repository.TaskMappingStatusSuccess,
 				})
 				slog.Info("task migrated", "migration_id", migration.Id, "dest_task_id", created.Id)
 				successCount++
@@ -1059,9 +1059,9 @@ func (s *MigrationService) executeMigration(
 		}
 	}
 
-	finalStatus := "completed"
+	finalStatus := repository.MigrationStatusCompleted
 	if failCount > 0 {
-		finalStatus = "completed_with_errors"
+		finalStatus = repository.MigrationStatusCompletedWithErrors
 	}
 	s.migrationRepo.Complete(migration.Id, finalStatus)
 }

@@ -6,14 +6,21 @@ import (
 	"time"
 )
 
+type TaskMappingStatus string
+
+const (
+	TaskMappingStatusSuccess TaskMappingStatus = "success"
+	TaskMappingStatusFailed  TaskMappingStatus = "failed"
+)
+
 type TaskMapping struct {
-	ID int64
-	MigrationID int64
+	ID           int64
+	MigrationID  int64
 	SourceTaskID string
-	DestTaskID string
-	Status string
+	DestTaskID   string
+	Status       TaskMappingStatus
 	ErrorMessage string
-	CreatedAt time.Time
+	CreatedAt    time.Time
 }
 
 type TaskMappingRepository struct {
