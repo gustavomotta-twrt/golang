@@ -11,10 +11,10 @@ import (
 )
 
 type MigrationHandler struct {
-	migrationService *service.MigrationService
+	migrationService service.MigrationServiceProvider
 }
 
-func NewMigrationHandler(migrationService *service.MigrationService) *MigrationHandler {
+func NewMigrationHandler(migrationService service.MigrationServiceProvider) *MigrationHandler {
 	return &MigrationHandler{migrationService: migrationService}
 }
 

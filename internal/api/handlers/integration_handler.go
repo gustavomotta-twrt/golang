@@ -8,10 +8,10 @@ import (
 )
 
 type IntegrationHandler struct {
-	integrationService *service.IntegrationService
+	integrationService service.IntegrationServiceProvider
 }
 
-func NewIntegrationHandler(integrationService *service.IntegrationService) *IntegrationHandler {
+func NewIntegrationHandler(integrationService service.IntegrationServiceProvider) *IntegrationHandler {
 	return &IntegrationHandler{
 		integrationService: integrationService,
 	}

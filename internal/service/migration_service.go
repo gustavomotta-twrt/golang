@@ -14,20 +14,57 @@ import (
 	"github.com/TWRT/integration-mapper/internal/repository"
 )
 
+// Internal repository interfaces — allow mock injection in tests.
+
+type migrationRepo interface {
+	Create(migration *repository.Migration) (int64, error)
+	UpdateProgress(id int64, completed, failed int) error
+	UpdateStatus(id int64, status string) error
+	Complete(id int64, status string) error
+	UpdateTotalTasks(id int64, totalTasks int) error
+	GetMigration(id int64) (repository.Migration, error)
+	GetMigrations() ([]repository.Migration, error)
+}
+
+type taskMappingRepo interface {
+	Create(mapping *repository.TaskMapping) error
+}
+
+type migrationMappingRepo interface {
+	UpsertPending(migrationID int64, mappingType repository.MappingType, sourceValue string, metadata *repository.AssigneeMetadata, sourceContainerID *string) error
+	UpdateMapping(migrationID int64, mappingType repository.MappingType, sourceValue string, sourceContainerID *string, destValue string) error
+	MarkContainerMappingsSkipped(migrationID int64, containerID string) error
+	ReactivateContainerMappings(migrationID int64, containerID string) error
+	GetByMigrationIDAndContainer(migrationID int64, containerID string) ([]repository.MigrationMapping, error)
+	GetGlobalByMigrationID(migrationID int64) ([]repository.MigrationMapping, error)
+	AllMapped(migrationID int64) (bool, error)
+	UpsertCustomField(migrationID int64, fieldID, fieldName, fieldType string, sourceContainerID *string) error
+	UpdateCustomFieldEnabled(migrationID int64, fieldID string, enabled bool, sourceContainerID *string) error
+	GetCustomFields(migrationID int64, containerID *string) ([]repository.CustomFieldRow, error)
+	GetEnabledCustomFieldIDs(migrationID int64) (map[string]bool, error)
+}
+
+type containerMappingRepo interface {
+	Upsert(migrationID int64, sourceID, sourceName string) error
+	UpdateMapping(migrationID int64, sourceID, destID, destName string, enabled bool) error
+	GetByMigrationID(migrationID int64) ([]repository.ContainerMapping, error)
+	AllMapped(migrationID int64) (bool, error)
+}
+
 type MigrationService struct {
 	providers            map[string]client.IntegrationProvider
-	migrationRepo        *repository.MigrationRepository
-	taskMappingRepo      *repository.TaskMappingRepository
-	migrationMappingRepo *repository.MigrationMappingRepository
-	containerMappingRepo *repository.ContainerMappingRepository
+	migrationRepo        migrationRepo
+	taskMappingRepo      taskMappingRepo
+	migrationMappingRepo migrationMappingRepo
+	containerMappingRepo containerMappingRepo
 }
 
 func NewMigrationService(
 	providers map[string]client.IntegrationProvider,
-	migrationRepo *repository.MigrationRepository,
-	taskMappingRepo *repository.TaskMappingRepository,
-	migrationMappingRepo *repository.MigrationMappingRepository,
-	containerMappingRepo *repository.ContainerMappingRepository,
+	migrationRepo migrationRepo,
+	taskMappingRepo taskMappingRepo,
+	migrationMappingRepo migrationMappingRepo,
+	containerMappingRepo containerMappingRepo,
 ) *MigrationService {
 	return &MigrationService{
 		providers:            providers,
@@ -36,6 +73,18 @@ func NewMigrationService(
 		migrationMappingRepo: migrationMappingRepo,
 		containerMappingRepo: containerMappingRepo,
 	}
+}
+
+// MigrationServiceProvider is the interface consumed by handlers.
+// Allows substitution with mocks in tests.
+type MigrationServiceProvider interface {
+	CreateMigration(input CreateMigrationInput) (int64, *MappingsState, error)
+	SyncMappings(migrationID int64) (*MappingsState, error)
+	SaveMappings(migrationID int64, assignees []AssigneeMappingInput, containerMappings []ContainerMappingInput) (*MappingsState, error)
+	GetDestContainerOptions(migrationID int64, destContainerID string) (statuses []string, priorities []string, err error)
+	StartMigration(migrationID int64) error
+	GetMigration(id int64) (repository.Migration, error)
+	GetMigrations() ([]repository.Migration, error)
 }
 
 // ---- Types ----
