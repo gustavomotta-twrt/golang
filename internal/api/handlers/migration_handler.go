@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strconv"
@@ -66,14 +67,22 @@ func parseMigrationID(r *http.Request) (int64, error) {
 	return strconv.ParseInt(r.PathValue("id"), 10, 64)
 }
 
-func readBody(r *http.Request) ([]byte, error) {
+const maxBodySize = 1 << 20 // 1 MB
+
+func readBody(w http.ResponseWriter, r *http.Request) ([]byte, error) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodySize)
 	return io.ReadAll(r.Body)
 }
 
 func (h *MigrationHandler) CreateMigration(w http.ResponseWriter, r *http.Request) {
-	body, err := readBody(r)
+	body, err := readBody(w, r)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "error reading body: "+err.Error())
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			writeError(w, http.StatusRequestEntityTooLarge, "request body too large")
+		} else {
+			writeError(w, http.StatusBadRequest, "error reading body: "+err.Error())
+		}
 		return
 	}
 
@@ -153,9 +162,14 @@ func (h *MigrationHandler) SaveMappings(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	body, err := readBody(r)
+	body, err := readBody(w, r)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "error reading body: "+err.Error())
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			writeError(w, http.StatusRequestEntityTooLarge, "request body too large")
+		} else {
+			writeError(w, http.StatusBadRequest, "error reading body: "+err.Error())
+		}
 		return
 	}
 
