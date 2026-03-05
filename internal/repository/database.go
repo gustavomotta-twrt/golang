@@ -65,6 +65,12 @@ func createTables(db *sql.DB) error {
         ON migration_mappings (migration_id, type, source_value)
         WHERE source_container_id IS NULL;
 
+    CREATE INDEX IF NOT EXISTS idx_mm_migration_container
+        ON migration_mappings (migration_id, source_container_id);
+
+    CREATE INDEX IF NOT EXISTS idx_mm_migration_status
+        ON migration_mappings (migration_id, status);
+
     CREATE TABLE IF NOT EXISTS container_mappings (
         id           INTEGER PRIMARY KEY AUTOINCREMENT,
         migration_id INTEGER NOT NULL,
