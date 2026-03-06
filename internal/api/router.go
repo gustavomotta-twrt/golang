@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/TWRT/integration-mapper/internal/api/handlers"
+	"github.com/TWRT/integration-mapper/internal/api/middleware"
 	"github.com/TWRT/integration-mapper/internal/client"
 	"github.com/TWRT/integration-mapper/internal/client/asana"
 	"github.com/TWRT/integration-mapper/internal/client/clickup"
@@ -12,7 +13,7 @@ import (
 	"github.com/TWRT/integration-mapper/internal/service"
 )
 
-func SetupRouter(db *sql.DB, asanaToken string, clickupToken string) *http.ServeMux {
+func SetupRouter(db *sql.DB, asanaToken string, clickupToken string, allowedOrigins []string) http.Handler {
 	mux := http.NewServeMux()
 
 	asanaClient := asana.NewAsanaClient(asanaToken)
@@ -59,5 +60,5 @@ func SetupRouter(db *sql.DB, asanaToken string, clickupToken string) *http.Serve
 	mux.HandleFunc("GET /clickup/spaces/{id}/lists", integrationHandler.GetClickupLists)
 	mux.HandleFunc("GET /clickup/lists/{id}/fields", integrationHandler.GetClickupListCustomFields)
 
-	return mux
+	return middleware.CORS(allowedOrigins)(mux)
 }

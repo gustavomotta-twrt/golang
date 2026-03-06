@@ -1,0 +1,18 @@
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - gosec
+    - noctx
+    - bodyclose
+
+linters-settings:
+  errcheck:
+    exclude-functions:
+      - (io.Closer).Close
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

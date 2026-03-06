@@ -307,7 +307,7 @@ func (c *AsanaClient) GetMembers(ctx context.Context, workspaceId string) ([]mod
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		errorBody, _ := io.ReadAll(resp.Body)
+		errorBody, _ := io.ReadAll(resp.Body) //nolint:errcheck // best-effort read for error message
 		var asanaErr AsanaErrors
 		if err := json.Unmarshal(errorBody, &asanaErr); err != nil {
 			return nil, fmt.Errorf("get members (asana): status %d", resp.StatusCode)
@@ -546,7 +546,7 @@ func (c *AsanaClient) CreateTag(ctx context.Context, workspaceId, name string) (
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusCreated {
-		errorBody, _ := io.ReadAll(resp.Body)
+		errorBody, _ := io.ReadAll(resp.Body) //nolint:errcheck // best-effort read for error message
 		var asanaErr AsanaErrors
 		if err := json.Unmarshal(errorBody, &asanaErr); err != nil {
 			return "", fmt.Errorf("error status (asana create tag): %d", resp.StatusCode)
@@ -698,7 +698,7 @@ func (c *AsanaClient) GetProjectCustomFieldOptions(ctx context.Context, projectG
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		errorBody, _ := io.ReadAll(resp.Body)
+		errorBody, _ := io.ReadAll(resp.Body) //nolint:errcheck // best-effort read for error message
 		var asanaErr AsanaErrors
 		if err := json.Unmarshal(errorBody, &asanaErr); err != nil {
 			return nil, fmt.Errorf("error status (asana): %d", resp.StatusCode)
@@ -766,7 +766,7 @@ func (c *AsanaClient) CreateCustomField(ctx context.Context, workspaceId, name, 
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusCreated {
-		errorBody, _ := io.ReadAll(resp.Body)
+		errorBody, _ := io.ReadAll(resp.Body) //nolint:errcheck // best-effort read for error message
 		var asanaErr AsanaErrors
 		if err := json.Unmarshal(errorBody, &asanaErr); err != nil {
 			return "", nil, fmt.Errorf("error status (asana create custom field): %d", resp.StatusCode)
@@ -914,7 +914,7 @@ func (c *AsanaClient) AttachCustomFieldToProject(ctx context.Context, projectGid
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		errorBody, _ := io.ReadAll(resp.Body)
+		errorBody, _ := io.ReadAll(resp.Body) //nolint:errcheck // best-effort read for error message
 		var asanaErr AsanaErrors
 		if err := json.Unmarshal(errorBody, &asanaErr); err != nil {
 			return fmt.Errorf("error status (asana attach custom field): %d", resp.StatusCode)

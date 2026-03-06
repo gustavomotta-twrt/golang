@@ -3,6 +3,7 @@ package repository
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 
 	_ "modernc.org/sqlite"
 )
@@ -109,8 +110,9 @@ func runMigrations(db *sql.DB) error {
 
 	// Ensure enabled column exists on container_mappings (legacy migration)
 	if _, err := db.Exec(`ALTER TABLE container_mappings ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1`); err != nil {
-		// ignore "duplicate column" errors
-		_ = err
+		if !strings.Contains(err.Error(), "duplicate column") {
+			return fmt.Errorf("alter container_mappings add enabled: %w", err)
+		}
 	}
 
 	return nil
@@ -171,7 +173,7 @@ func migrateAddSourceContainerID(db *sql.DB) error {
 
 	for _, stmt := range stmts {
 		if _, err := tx.Exec(stmt); err != nil {
-			_ = tx.Rollback()
+			_ = tx.Rollback() //nolint:errcheck // rollback error is secondary to the transaction error above
 			return fmt.Errorf("migration stmt: %w", err)
 		}
 	}

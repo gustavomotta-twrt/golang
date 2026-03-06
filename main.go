@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -36,7 +37,8 @@ func main() {
 	defer db.Close()
 	slog.Info("database initialized")
 
-	router := api.SetupRouter(db, asanaToken, clickUpToken)
+	allowedOrigins := strings.Split(os.Getenv("ALLOWED_ORIGINS"), ",")
+	router := api.SetupRouter(db, asanaToken, clickUpToken, allowedOrigins)
 
 	server := &http.Server{
 		Addr:              ":8080",
