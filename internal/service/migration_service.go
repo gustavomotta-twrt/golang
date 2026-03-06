@@ -422,7 +422,7 @@ func (s *MigrationService) loadCustomFieldsStateForContainer(migrationID int64, 
 
 func (s *MigrationService) buildMappingsState(ctx context.Context, migration repository.Migration) (*MappingsState, error) {
 	// Global mappings (assignees, NULL container)
-	globalMappings, err := s.migrationMappingRepo.GetGlobalByMigrationID(migration.Id)
+	globalMappings, err := s.migrationMappingRepo.GetGlobalByMigrationID(migration.ID)
 	if err != nil {
 		return nil, fmt.Errorf("get global mappings: %w", err)
 	}
@@ -452,7 +452,7 @@ func (s *MigrationService) buildMappingsState(ctx context.Context, migration rep
 	}
 
 	// Per-container details
-	containerMappings, err := s.containerMappingRepo.GetByMigrationID(migration.Id)
+	containerMappings, err := s.containerMappingRepo.GetByMigrationID(migration.ID)
 	if err != nil {
 		return nil, fmt.Errorf("get container mappings: %w", err)
 	}
@@ -471,7 +471,7 @@ func (s *MigrationService) buildMappingsState(ctx context.Context, migration rep
 		}
 
 		// Load per-container status/priority
-		perContainerMappings, err := s.migrationMappingRepo.GetByMigrationIDAndContainer(migration.Id, cm.SourceID)
+		perContainerMappings, err := s.migrationMappingRepo.GetByMigrationIDAndContainer(migration.ID, cm.SourceID)
 		if err != nil {
 			slog.Warn("could not load per-container mappings", "container", cm.SourceID, "error", err)
 		}
@@ -490,7 +490,7 @@ func (s *MigrationService) buildMappingsState(ctx context.Context, migration rep
 		}
 
 		// Load per-container custom fields
-		detail.CustomFields = s.loadCustomFieldsStateForContainer(migration.Id, cm.SourceID)
+		detail.CustomFields = s.loadCustomFieldsStateForContainer(migration.ID, cm.SourceID)
 
 		// Fetch available dest options if destination is set
 		if cm.DestID != nil {
@@ -569,7 +569,7 @@ func (s *MigrationService) CreateMigration(ctx context.Context, input CreateMigr
 		}
 	}
 
-	migration.Id = migrationID
+	migration.ID = migrationID
 	state, err := s.buildMappingsState(ctx, *migration)
 	if err != nil {
 		return 0, nil, fmt.Errorf("build mappings state: %w", err)
@@ -799,26 +799,26 @@ func (s *MigrationService) executeMigration(
 	defer func() {
 		if r := recover(); r != nil {
 			slog.Error("panic in executeMigration",
-				"migration_id", migration.Id,
+				"migration_id", migration.ID,
 				"panic", r,
 				"stack", string(debug.Stack()),
 			)
-			s.migrationRepo.Complete(migration.Id, repository.MigrationStatusFailed)
+			s.migrationRepo.Complete(migration.ID, repository.MigrationStatusFailed)
 		}
 	}()
 
-	containerMappings, err := s.containerMappingRepo.GetByMigrationID(migration.Id)
+	containerMappings, err := s.containerMappingRepo.GetByMigrationID(migration.ID)
 	if err != nil {
-		s.migrationRepo.Complete(migration.Id, repository.MigrationStatusFailed)
-		slog.Error("failed to load container mappings", "migration_id", migration.Id, "error", err)
+		s.migrationRepo.Complete(migration.ID, repository.MigrationStatusFailed)
+		slog.Error("failed to load container mappings", "migration_id", migration.ID, "error", err)
 		return
 	}
 
 	// Load global assignee mappings (NULL container)
-	globalMappings, err := s.migrationMappingRepo.GetGlobalByMigrationID(migration.Id)
+	globalMappings, err := s.migrationMappingRepo.GetGlobalByMigrationID(migration.ID)
 	if err != nil {
-		s.migrationRepo.Complete(migration.Id, repository.MigrationStatusFailed)
-		slog.Error("failed to load global mappings", "migration_id", migration.Id, "error", err)
+		s.migrationRepo.Complete(migration.ID, repository.MigrationStatusFailed)
+		slog.Error("failed to load global mappings", "migration_id", migration.ID, "error", err)
 		return
 	}
 	resolvedAssignees := make(map[string]string)
@@ -835,9 +835,9 @@ func (s *MigrationService) executeMigration(
 			sourceProvider, _ := sourceClient.(client.IntegrationProvider)
 			listIDs := s.resolveListIDs(ctx, sourceProvider, migration.SourceProjectID)
 			cfMapping = s.buildCustomFieldMapping(ctx, fp, fc, listIDs, migration.DestWorkspaceID, migration.DestListID)
-			enabledIDs, err := s.migrationMappingRepo.GetEnabledCustomFieldIDs(migration.Id)
+			enabledIDs, err := s.migrationMappingRepo.GetEnabledCustomFieldIDs(migration.ID)
 			if err != nil {
-				slog.Warn("could not load enabled custom field IDs, migrating all fields", "migration_id", migration.Id, "error", err)
+				slog.Warn("could not load enabled custom field IDs, migrating all fields", "migration_id", migration.ID, "error", err)
 			} else {
 				for id := range cfMapping {
 					if !enabledIDs[id] {
@@ -853,8 +853,8 @@ func (s *MigrationService) executeMigration(
 	if lookup, ok := destClient.(client.PriorityLookup); ok {
 		options, err := lookup.GetProjectCustomFieldOptions(ctx, migration.DestListID)
 		if err != nil {
-			s.migrationRepo.Complete(migration.Id, repository.MigrationStatusFailed)
-			slog.Error("failed to fetch priority options", "migration_id", migration.Id, "error", err)
+			s.migrationRepo.Complete(migration.ID, repository.MigrationStatusFailed)
+			slog.Error("failed to fetch priority options", "migration_id", migration.ID, "error", err)
 			return
 		}
 		priorityOptions = options
@@ -887,13 +887,13 @@ func (s *MigrationService) executeMigration(
 
 			containerTasks, err := cp.GetTasksByContainer(ctx, cm.SourceID)
 			if err != nil {
-				s.migrationRepo.Complete(migration.Id, repository.MigrationStatusFailed)
+				s.migrationRepo.Complete(migration.ID, repository.MigrationStatusFailed)
 				slog.Error("failed to fetch tasks for container", "container", cm.SourceName, "error", err)
 				return
 			}
 
 			// Load per-container status/priority mappings
-			perContainerMappings, err := s.migrationMappingRepo.GetByMigrationIDAndContainer(migration.Id, cm.SourceID)
+			perContainerMappings, err := s.migrationMappingRepo.GetByMigrationIDAndContainer(migration.ID, cm.SourceID)
 			if err != nil {
 				slog.Warn("could not load per-container mappings, using empty", "container", cm.SourceID, "error", err)
 			}
@@ -926,10 +926,10 @@ func (s *MigrationService) executeMigration(
 			totalTasks += len(containerTasks)
 		}
 
-		s.migrationRepo.UpdateTotalTasks(migration.Id, totalTasks)
+		s.migrationRepo.UpdateTotalTasks(migration.ID, totalTasks)
 
 		slog.Info("starting migration",
-			"migration_id", migration.Id,
+			"migration_id", migration.ID,
 			"source", migration.Source,
 			"destination", migration.Destination,
 			"total_tasks", totalTasks,
@@ -938,7 +938,7 @@ func (s *MigrationService) executeMigration(
 
 		for _, group := range tasksByContainer {
 			for _, task := range group.tasks {
-				slog.Info("migrating task", "migration_id", migration.Id, "task_id", task.Id, "task_name", task.Name)
+				slog.Info("migrating task", "migration_id", migration.ID, "task_id", task.Id, "task_name", task.Name)
 
 				task.Status = mapStatus(task.Status, group.status)
 				task.Priority = mapPriority(task.Priority, group.prio)
@@ -965,35 +965,35 @@ func (s *MigrationService) executeMigration(
 				created, err := destClient.CreateTask(ctx, group.destID, migration.DestWorkspaceID, task)
 				if err != nil {
 					s.taskMappingRepo.Create(&repository.TaskMapping{
-						MigrationID:  migration.Id,
+						MigrationID:  migration.ID,
 						SourceTaskID: task.Id,
 						Status:       repository.TaskMappingStatusFailed,
 						ErrorMessage: err.Error(),
 					})
-					slog.Error("failed to migrate task", "migration_id", migration.Id, "task_name", task.Name, "error", err)
+					slog.Error("failed to migrate task", "migration_id", migration.ID, "task_name", task.Name, "error", err)
 					failCount++
 				} else {
 					s.taskMappingRepo.Create(&repository.TaskMapping{
-						MigrationID:  migration.Id,
+						MigrationID:  migration.ID,
 						SourceTaskID: task.Id,
 						DestTaskID:   created.Id,
 						Status:       repository.TaskMappingStatusSuccess,
 					})
-					slog.Info("task migrated", "migration_id", migration.Id, "dest_task_id", created.Id)
+					slog.Info("task migrated", "migration_id", migration.ID, "dest_task_id", created.Id)
 					successCount++
 				}
 				if (successCount+failCount)%10 == 0 {
-					s.migrationRepo.UpdateProgress(migration.Id, successCount, failCount)
+					s.migrationRepo.UpdateProgress(migration.ID, successCount, failCount)
 				}
 			}
 		}
-		s.migrationRepo.UpdateProgress(migration.Id, successCount, failCount)
+		s.migrationRepo.UpdateProgress(migration.ID, successCount, failCount)
 	} else {
 		// Non-container source: load all mappings globally
-		allMappings, err := s.migrationMappingRepo.GetGlobalByMigrationID(migration.Id)
+		allMappings, err := s.migrationMappingRepo.GetGlobalByMigrationID(migration.ID)
 		if err != nil {
-			s.migrationRepo.Complete(migration.Id, repository.MigrationStatusFailed)
-			slog.Error("failed to load mappings", "migration_id", migration.Id, "error", err)
+			s.migrationRepo.Complete(migration.ID, repository.MigrationStatusFailed)
+			slog.Error("failed to load mappings", "migration_id", migration.ID, "error", err)
 			return
 		}
 		statusMap := make(map[string]string)
@@ -1012,14 +1012,14 @@ func (s *MigrationService) executeMigration(
 
 		tasks, err := sourceClient.GetTasks(ctx, migration.SourceProjectID)
 		if err != nil {
-			s.migrationRepo.Complete(migration.Id, repository.MigrationStatusFailed)
-			slog.Error("failed to fetch tasks", "migration_id", migration.Id, "error", err)
+			s.migrationRepo.Complete(migration.ID, repository.MigrationStatusFailed)
+			slog.Error("failed to fetch tasks", "migration_id", migration.ID, "error", err)
 			return
 		}
-		s.migrationRepo.UpdateTotalTasks(migration.Id, len(tasks))
+		s.migrationRepo.UpdateTotalTasks(migration.ID, len(tasks))
 
 		slog.Info("starting migration",
-			"migration_id", migration.Id,
+			"migration_id", migration.ID,
 			"source", migration.Source,
 			"destination", migration.Destination,
 			"total_tasks", len(tasks),
@@ -1055,35 +1055,35 @@ func (s *MigrationService) executeMigration(
 			created, err := destClient.CreateTask(ctx, destContainerID, migration.DestWorkspaceID, task)
 			if err != nil {
 				s.taskMappingRepo.Create(&repository.TaskMapping{
-					MigrationID:  migration.Id,
+					MigrationID:  migration.ID,
 					SourceTaskID: task.Id,
 					Status:       repository.TaskMappingStatusFailed,
 					ErrorMessage: err.Error(),
 				})
-				slog.Error("failed to migrate task", "migration_id", migration.Id, "task_name", task.Name, "error", err)
+				slog.Error("failed to migrate task", "migration_id", migration.ID, "task_name", task.Name, "error", err)
 				failCount++
 			} else {
 				s.taskMappingRepo.Create(&repository.TaskMapping{
-					MigrationID:  migration.Id,
+					MigrationID:  migration.ID,
 					SourceTaskID: task.Id,
 					DestTaskID:   created.Id,
 					Status:       repository.TaskMappingStatusSuccess,
 				})
-				slog.Info("task migrated", "migration_id", migration.Id, "dest_task_id", created.Id)
+				slog.Info("task migrated", "migration_id", migration.ID, "dest_task_id", created.Id)
 				successCount++
 			}
 			if (successCount+failCount)%10 == 0 {
-				s.migrationRepo.UpdateProgress(migration.Id, successCount, failCount)
+				s.migrationRepo.UpdateProgress(migration.ID, successCount, failCount)
 			}
 		}
-		s.migrationRepo.UpdateProgress(migration.Id, successCount, failCount)
+		s.migrationRepo.UpdateProgress(migration.ID, successCount, failCount)
 	}
 
 	finalStatus := repository.MigrationStatusCompleted
 	if failCount > 0 {
 		finalStatus = repository.MigrationStatusCompletedWithErrors
 	}
-	s.migrationRepo.Complete(migration.Id, finalStatus)
+	s.migrationRepo.Complete(migration.ID, finalStatus)
 }
 
 // resolveListIDs returns list IDs from a provider for custom field discovery.

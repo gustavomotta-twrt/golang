@@ -18,7 +18,7 @@ const (
 )
 
 type Migration struct {
-	Id              int64
+	ID              int64  `json:"id"`
 	Source          string
 	Destination     string
 	SourceProjectID string
@@ -113,7 +113,7 @@ func (r *MigrationRepository) GetMigration(id int64) (Migration, error) {
 	var destWorkspaceID, destSpaceID sql.NullString
 
 	err := r.db.QueryRow(query, id).Scan(
-		&m.Id,
+		&m.ID,
 		&m.Source,
 		&m.Destination,
 		&m.SourceProjectID,
@@ -161,7 +161,7 @@ func (r *MigrationRepository) GetMigrations() ([]Migration, error) {
 		var destWorkspaceID, destSpaceID sql.NullString
 
 		err := rows.Scan(
-			&m.Id,
+			&m.ID,
 			&m.Source,
 			&m.Destination,
 			&m.SourceProjectID,

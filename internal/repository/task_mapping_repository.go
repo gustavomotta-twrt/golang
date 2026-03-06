@@ -46,7 +46,7 @@ func (r *TaskMappingRepository) Create(mapping *TaskMapping) error {
     )
 	
 	if err != nil {
-        return fmt.Errorf("erro ao criar mapeamento: %w", err)
+        return fmt.Errorf("create task mapping: %w", err)
     }
     
     return nil
