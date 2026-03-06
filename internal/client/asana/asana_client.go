@@ -2,6 +2,7 @@ package asana
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -51,11 +52,11 @@ func formatDueDate(t *time.Time) string {
 	return t.UTC().Format("2006-01-02")
 }
 
-func (c *AsanaClient) GetTasks(projectId string) ([]models.Task, error) {
+func (c *AsanaClient) GetTasks(ctx context.Context, projectId string) ([]models.Task, error) {
 	url := c.baseUrl + "/tasks?project=" + projectId +
 		"&opt_fields=name,notes,completed,assignee,assignee.gid,assignee.name,assignee.email,due_on,custom_fields,custom_fields.name,custom_fields.enum_value,custom_fields.enum_value.name,tags,tags.name"
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build request (asana): %w", err)
 	}
@@ -145,7 +146,7 @@ func (c *AsanaClient) GetTasks(projectId string) ([]models.Task, error) {
 
 // CreateTask creates a task in Asana. The projectId param may be in the form
 // "projectGid|sectionGid" to place the task inside a specific section.
-func (c *AsanaClient) CreateTask(projectId string, workspaceId string, task models.Task) (*models.Task, error) {
+func (c *AsanaClient) CreateTask(ctx context.Context, projectId string, workspaceId string, task models.Task) (*models.Task, error) {
 	// Parse optional section from projectId
 	actualProjectId := projectId
 	sectionId := ""
@@ -190,7 +191,7 @@ func (c *AsanaClient) CreateTask(projectId string, workspaceId string, task mode
 	}
 
 	if len(task.Tags) > 0 && workspaceId != "" {
-		cachedTags, err := c.GetTagsForWorkspace(workspaceId)
+		cachedTags, err := c.GetTagsForWorkspace(ctx, workspaceId)
 		if err != nil {
 			return nil, fmt.Errorf("get workspace tags for resolution (asana): %w", err)
 		}
@@ -204,7 +205,7 @@ func (c *AsanaClient) CreateTask(projectId string, workspaceId string, task mode
 			c.tagCacheMu.RUnlock()
 
 			if !ok {
-				newGid, err := c.CreateTag(workspaceId, tagName)
+				newGid, err := c.CreateTag(ctx, workspaceId, tagName)
 				if err != nil {
 					return nil, fmt.Errorf("create tag %q (asana): %w", tagName, err)
 				}
@@ -227,7 +228,7 @@ func (c *AsanaClient) CreateTask(projectId string, workspaceId string, task mode
 		return nil, fmt.Errorf("marshal create task request (asana): %w", err)
 	}
 
-	req, err := http.NewRequest("POST", c.baseUrl+"/tasks", bytes.NewBuffer(body))
+	req, err := http.NewRequestWithContext(ctx, "POST", c.baseUrl+"/tasks", bytes.NewBuffer(body))
 	if err != nil {
 		return nil, fmt.Errorf("build request (asana): %w", err)
 	}
@@ -280,10 +281,10 @@ func (c *AsanaClient) CreateTask(projectId string, workspaceId string, task mode
 	}, nil
 }
 
-func (c *AsanaClient) GetMembers(workspaceId string) ([]models.Member, error) {
+func (c *AsanaClient) GetMembers(ctx context.Context, workspaceId string) ([]models.Member, error) {
 	url := c.baseUrl + "/users?workspace=" + workspaceId + "&opt_fields=name,email"
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build request (asana): %w", err)
 	}
@@ -329,10 +330,10 @@ func (c *AsanaClient) GetMembers(workspaceId string) ([]models.Member, error) {
 	return members, nil
 }
 
-func (c *AsanaClient) GetWorkspaces() ([]GetMultipleWorkspacesResponse, error) {
+func (c *AsanaClient) GetWorkspaces(ctx context.Context) ([]GetMultipleWorkspacesResponse, error) {
 	url := c.baseUrl + "/workspaces"
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build request (asana): %w", err)
 	}
@@ -374,10 +375,10 @@ func (c *AsanaClient) GetWorkspaces() ([]GetMultipleWorkspacesResponse, error) {
 	return asanaResp.Data, nil
 }
 
-func (c *AsanaClient) GetProjects(workspaceId string) ([]GetMultipleProjectsResponse, error) {
+func (c *AsanaClient) GetProjects(ctx context.Context, workspaceId string) ([]GetMultipleProjectsResponse, error) {
 	url := c.baseUrl + "/projects?workspace=" + workspaceId
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build request (asana): %w", err)
 	}
@@ -419,7 +420,7 @@ func (c *AsanaClient) GetProjects(workspaceId string) ([]GetMultipleProjectsResp
 	return asanaResp.Data, nil
 }
 
-func (c *AsanaClient) fetchTagsFromAPI(workspaceId string) (map[string]string, error) {
+func (c *AsanaClient) fetchTagsFromAPI(ctx context.Context, workspaceId string) (map[string]string, error) {
 	tagMap := make(map[string]string)
 	offset := ""
 
@@ -429,7 +430,7 @@ func (c *AsanaClient) fetchTagsFromAPI(workspaceId string) (map[string]string, e
 			url += "&offset=" + offset
 		}
 
-		req, err := http.NewRequest("GET", url, nil)
+		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 		if err != nil {
 			return nil, fmt.Errorf("build request (asana tags): %w", err)
 		}
@@ -481,7 +482,7 @@ func (c *AsanaClient) fetchTagsFromAPI(workspaceId string) (map[string]string, e
 	return tagMap, nil
 }
 
-func (c *AsanaClient) GetTagsForWorkspace(workspaceId string) (map[string]string, error) {
+func (c *AsanaClient) GetTagsForWorkspace(ctx context.Context, workspaceId string) (map[string]string, error) {
 	// Fast path: cache hit
 	c.tagCacheMu.RLock()
 	if cached, ok := c.tagCache[workspaceId]; ok {
@@ -491,7 +492,7 @@ func (c *AsanaClient) GetTagsForWorkspace(workspaceId string) (map[string]string
 	c.tagCacheMu.RUnlock()
 
 	// Slow path: fetch from API without holding the lock
-	tagMap, err := c.fetchTagsFromAPI(workspaceId)
+	tagMap, err := c.fetchTagsFromAPI(ctx, workspaceId)
 	if err != nil {
 		return nil, err
 	}
@@ -508,7 +509,7 @@ func (c *AsanaClient) GetTagsForWorkspace(workspaceId string) (map[string]string
 	return tagMap, nil
 }
 
-func (c *AsanaClient) CreateTag(workspaceId, name string) (string, error) {
+func (c *AsanaClient) CreateTag(ctx context.Context, workspaceId, name string) (string, error) {
 	wrapper := CreateTagRequestWrapper{
 		Data: CreateTagRequest{
 			Name:      name,
@@ -521,7 +522,7 @@ func (c *AsanaClient) CreateTag(workspaceId, name string) (string, error) {
 		return "", fmt.Errorf("marshal create tag request (asana): %w", err)
 	}
 
-	req, err := http.NewRequest("POST", c.baseUrl+"/tags", bytes.NewBuffer(body))
+	req, err := http.NewRequestWithContext(ctx, "POST", c.baseUrl+"/tags", bytes.NewBuffer(body))
 	if err != nil {
 		return "", fmt.Errorf("build request (asana create tag): %w", err)
 	}
@@ -561,8 +562,8 @@ func (c *AsanaClient) CreateTag(workspaceId, name string) (string, error) {
 }
 
 // GetSourceContainers returns the sections of an Asana project (used as source containers).
-func (c *AsanaClient) GetSourceContainers(projectId string) ([]client.Container, error) {
-	sections, err := c.GetSections(projectId)
+func (c *AsanaClient) GetSourceContainers(ctx context.Context, projectId string) ([]client.Container, error) {
+	sections, err := c.GetSections(ctx, projectId)
 	if err != nil {
 		return nil, err
 	}
@@ -574,23 +575,23 @@ func (c *AsanaClient) GetSourceContainers(projectId string) ([]client.Container,
 }
 
 // GetTasksByContainer returns tasks in an Asana section.
-func (c *AsanaClient) GetTasksByContainer(sectionId string) ([]models.Task, error) {
-	return c.GetTasksBySection(sectionId)
+func (c *AsanaClient) GetTasksByContainer(ctx context.Context, sectionId string) ([]models.Task, error) {
+	return c.GetTasksBySection(ctx, sectionId)
 }
 
 // GetDestContainers returns the sections of an Asana project (used as destination containers).
-func (c *AsanaClient) GetDestContainers(projectId string) ([]client.Container, error) {
-	return c.GetSourceContainers(projectId)
+func (c *AsanaClient) GetDestContainers(ctx context.Context, projectId string) ([]client.Container, error) {
+	return c.GetSourceContainers(ctx, projectId)
 }
 
-func (c *AsanaClient) GetListStatuses(listId string) ([]string, error) {
+func (c *AsanaClient) GetListStatuses(ctx context.Context, listId string) ([]string, error) {
 	return []string{"Incomplete", "Completed"}, nil
 }
 
-func (c *AsanaClient) GetSections(projectId string) ([]AsanaSection, error) {
+func (c *AsanaClient) GetSections(ctx context.Context, projectId string) ([]AsanaSection, error) {
 	url := c.baseUrl + "/projects/" + projectId + "/sections?opt_fields=name"
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build request (asana get sections): %w", err)
 	}
@@ -624,11 +625,11 @@ func (c *AsanaClient) GetSections(projectId string) ([]AsanaSection, error) {
 }
 
 // GetTasksBySection fetches all tasks belonging to a specific Asana section.
-func (c *AsanaClient) GetTasksBySection(sectionId string) ([]models.Task, error) {
+func (c *AsanaClient) GetTasksBySection(ctx context.Context, sectionId string) ([]models.Task, error) {
 	url := c.baseUrl + "/tasks?section=" + sectionId +
 		"&opt_fields=name,notes,completed,assignee,assignee.gid,assignee.name,assignee.email,due_on,custom_fields,custom_fields.name,custom_fields.enum_value,custom_fields.enum_value.name,tags,tags.name"
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build request (asana get tasks by section): %w", err)
 	}
@@ -707,11 +708,11 @@ func (c *AsanaClient) GetTasksBySection(sectionId string) ([]models.Task, error)
 	return tasks, nil
 }
 
-func (c *AsanaClient) GetProjectCustomFieldOptions(projectGid string) (map[string]string, error) {
+func (c *AsanaClient) GetProjectCustomFieldOptions(ctx context.Context, projectGid string) (map[string]string, error) {
 	url := c.baseUrl + "/projects/" + projectGid + "/custom_field_settings" +
 		"?opt_fields=custom_field.name,custom_field.gid,custom_field.enum_options,custom_field.enum_options.name,custom_field.enum_options.gid"
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build request (asana): %w", err)
 	}
@@ -761,7 +762,7 @@ func (c *AsanaClient) GetProjectCustomFieldOptions(projectGid string) (map[strin
 	return map[string]string{}, nil
 }
 
-func (c *AsanaClient) CreateCustomField(workspaceId, name, asanaType string, options []string) (string, []string, error) {
+func (c *AsanaClient) CreateCustomField(ctx context.Context, workspaceId, name, asanaType string, options []string) (string, []string, error) {
 	reqData := CreateCustomFieldRequest{
 		Workspace: workspaceId,
 		Name:      name,
@@ -779,7 +780,7 @@ func (c *AsanaClient) CreateCustomField(workspaceId, name, asanaType string, opt
 		return "", nil, fmt.Errorf("marshal create custom field request (asana): %w", err)
 	}
 
-	req, err := http.NewRequest("POST", c.baseUrl+"/custom_fields", bytes.NewBuffer(body))
+	req, err := http.NewRequestWithContext(ctx, "POST", c.baseUrl+"/custom_fields", bytes.NewBuffer(body))
 	if err != nil {
 		return "", nil, fmt.Errorf("build request (asana create custom field): %w", err)
 	}
@@ -822,11 +823,11 @@ func (c *AsanaClient) CreateCustomField(workspaceId, name, asanaType string, opt
 	return result.Data.Gid, optionGIDs, nil
 }
 
-func (c *AsanaClient) GetProjectCustomField(projectGid, name string) (string, []string, bool, error) {
+func (c *AsanaClient) GetProjectCustomField(ctx context.Context, projectGid, name string) (string, []string, bool, error) {
 	url := c.baseUrl + "/projects/" + projectGid + "/custom_field_settings" +
 		"?opt_fields=custom_field.gid,custom_field.name,custom_field.enum_options,custom_field.enum_options.gid,custom_field.enum_options.name"
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return "", nil, false, fmt.Errorf("build request (asana project custom fields): %w", err)
 	}
@@ -861,12 +862,12 @@ func (c *AsanaClient) GetProjectCustomField(projectGid, name string) (string, []
 	return "", nil, false, nil
 }
 
-func (c *AsanaClient) FindCustomFieldByName(workspaceId, name string) (string, []string, error) {
+func (c *AsanaClient) FindCustomFieldByName(ctx context.Context, workspaceId, name string) (string, []string, error) {
 	baseURL := fmt.Sprintf("%s/workspaces/%s/custom_fields?opt_fields=gid,name,enum_options,enum_options.gid,enum_options.name&limit=100", c.baseUrl, workspaceId)
 	nextURL := baseURL
 
 	for nextURL != "" {
-		req, err := http.NewRequest("GET", nextURL, nil)
+		req, err := http.NewRequestWithContext(ctx, "GET", nextURL, nil)
 		if err != nil {
 			return "", nil, fmt.Errorf("build request (asana find custom field): %w", err)
 		}
@@ -916,7 +917,7 @@ func (c *AsanaClient) FindCustomFieldByName(workspaceId, name string) (string, [
 	return "", nil, fmt.Errorf("custom field %q not found in workspace", name)
 }
 
-func (c *AsanaClient) AttachCustomFieldToProject(projectGid, fieldGid string) error {
+func (c *AsanaClient) AttachCustomFieldToProject(ctx context.Context, projectGid, fieldGid string) error {
 	reqData := AddCustomFieldSettingRequest{
 		Data: AddCustomFieldSettingData{CustomField: fieldGid},
 	}
@@ -927,7 +928,7 @@ func (c *AsanaClient) AttachCustomFieldToProject(projectGid, fieldGid string) er
 	}
 
 	url := c.baseUrl + "/projects/" + projectGid + "/addCustomFieldSetting"
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(body))
 	if err != nil {
 		return fmt.Errorf("build request (asana attach custom field): %w", err)
 	}

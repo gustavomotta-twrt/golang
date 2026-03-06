@@ -2,6 +2,7 @@ package clickup
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -72,10 +73,10 @@ func priorityStringToInt(p string) *int {
 	return nil
 }
 
-func (c *ClickUpClient) GetTasks(listId string) ([]models.Task, error) {
+func (c *ClickUpClient) GetTasks(ctx context.Context, listId string) ([]models.Task, error) {
 	url := c.baseUrl + "/list/" + listId + "/task?include_closed=true"
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build request (clickup): %w", err)
 	}
@@ -171,8 +172,8 @@ func (c *ClickUpClient) GetTasks(listId string) ([]models.Task, error) {
 	return tasks, nil
 }
 
-func (c *ClickUpClient) GetFieldDefinitions(listId string) ([]models.CustomFieldDefinition, error) {
-	fields, err := c.GetListCustomFields(listId)
+func (c *ClickUpClient) GetFieldDefinitions(ctx context.Context, listId string) ([]models.CustomFieldDefinition, error) {
+	fields, err := c.GetListCustomFields(ctx, listId)
 	if err != nil {
 		return nil, fmt.Errorf("get field definitions (clickup): %w", err)
 	}
@@ -204,7 +205,7 @@ func (c *ClickUpClient) GetFieldDefinitions(listId string) ([]models.CustomField
 	return defs, nil
 }
 
-func (c *ClickUpClient) CreateTask(listId string, _ string, task models.Task) (*models.Task, error) {
+func (c *ClickUpClient) CreateTask(ctx context.Context, listId string, _ string, task models.Task) (*models.Task, error) {
 	assignees := make([]int, 0, len(task.Assignees))
 	for _, a := range task.Assignees {
 		id, err := strconv.Atoi(a.ID)
@@ -231,7 +232,7 @@ func (c *ClickUpClient) CreateTask(listId string, _ string, task models.Task) (*
 		return nil, fmt.Errorf("marshal create task request (clickup): %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(body))
 	if err != nil {
 		return nil, fmt.Errorf("build request (clickup): %w", err)
 	}
@@ -278,10 +279,10 @@ func (c *ClickUpClient) CreateTask(listId string, _ string, task models.Task) (*
 	}, nil
 }
 
-func (c *ClickUpClient) GetWorkspaces() ([]ClickUpTeams, error) {
+func (c *ClickUpClient) GetWorkspaces(ctx context.Context) ([]ClickUpTeams, error) {
 	url := c.baseUrl + "/team"
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build request (clickup): %w", err)
 	}
@@ -323,8 +324,8 @@ func (c *ClickUpClient) GetWorkspaces() ([]ClickUpTeams, error) {
 	return clickupResp.Teams, nil
 }
 
-func (c *ClickUpClient) GetMembers(workspaceId string) ([]models.Member, error) {
-	teams, err := c.GetWorkspaces()
+func (c *ClickUpClient) GetMembers(ctx context.Context, workspaceId string) ([]models.Member, error) {
+	teams, err := c.GetWorkspaces(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("get workspace members (clickup): %w", err)
 	}
@@ -345,10 +346,10 @@ func (c *ClickUpClient) GetMembers(workspaceId string) ([]models.Member, error) 
 	return nil, fmt.Errorf("workspace %s not found (clickup)", workspaceId)
 }
 
-func (c *ClickUpClient) GetSpaces(workspaceId string) ([]ClickUpSpace, error) {
+func (c *ClickUpClient) GetSpaces(ctx context.Context, workspaceId string) ([]ClickUpSpace, error) {
 	url := c.baseUrl + "/team/" + workspaceId + "/space"
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build request (clickup): %w", err)
 	}
@@ -390,10 +391,10 @@ func (c *ClickUpClient) GetSpaces(workspaceId string) ([]ClickUpSpace, error) {
 	return clickupResp.Spaces, nil
 }
 
-func (c *ClickUpClient) GetLists(spaceId string) ([]ClickUpList, error) {
+func (c *ClickUpClient) GetLists(ctx context.Context, spaceId string) ([]ClickUpList, error) {
 	url := c.baseUrl + "/space/" + spaceId + "/list"
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build request (clickup): %w", err)
 	}
@@ -435,10 +436,10 @@ func (c *ClickUpClient) GetLists(spaceId string) ([]ClickUpList, error) {
 	return clickupResp.Lists, nil
 }
 
-func (c *ClickUpClient) GetListCustomFields(listId string) ([]ClickUpCustomField, error) {
+func (c *ClickUpClient) GetListCustomFields(ctx context.Context, listId string) ([]ClickUpCustomField, error) {
 	url := c.baseUrl + "/list/" + listId + "/field"
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build request (clickup): %w", err)
 	}
@@ -481,8 +482,8 @@ func (c *ClickUpClient) GetListCustomFields(listId string) ([]ClickUpCustomField
 }
 
 // GetSourceContainers returns the lists of a ClickUp space (used as source containers).
-func (c *ClickUpClient) GetSourceContainers(spaceId string) ([]client.Container, error) {
-	lists, err := c.GetLists(spaceId)
+func (c *ClickUpClient) GetSourceContainers(ctx context.Context, spaceId string) ([]client.Container, error) {
+	lists, err := c.GetLists(ctx, spaceId)
 	if err != nil {
 		return nil, err
 	}
@@ -494,19 +495,19 @@ func (c *ClickUpClient) GetSourceContainers(spaceId string) ([]client.Container,
 }
 
 // GetTasksByContainer returns tasks in a ClickUp list.
-func (c *ClickUpClient) GetTasksByContainer(listId string) ([]models.Task, error) {
-	return c.GetTasks(listId)
+func (c *ClickUpClient) GetTasksByContainer(ctx context.Context, listId string) ([]models.Task, error) {
+	return c.GetTasks(ctx, listId)
 }
 
 // GetDestContainers returns the lists of a ClickUp space (used as destination containers).
-func (c *ClickUpClient) GetDestContainers(spaceId string) ([]client.Container, error) {
-	return c.GetSourceContainers(spaceId)
+func (c *ClickUpClient) GetDestContainers(ctx context.Context, spaceId string) ([]client.Container, error) {
+	return c.GetSourceContainers(ctx, spaceId)
 }
 
-func (c *ClickUpClient) GetListStatuses(listId string) ([]string, error) {
+func (c *ClickUpClient) GetListStatuses(ctx context.Context, listId string) ([]string, error) {
 	url := c.baseUrl + "/list/" + listId
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build request (clickup): %w", err)
 	}

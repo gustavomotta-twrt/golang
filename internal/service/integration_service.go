@@ -1,6 +1,8 @@
 package service
 
 import (
+	"context"
+
 	"github.com/TWRT/integration-mapper/internal/client/asana"
 	"github.com/TWRT/integration-mapper/internal/client/clickup"
 )
@@ -8,16 +10,16 @@ import (
 // Internal client interfaces — allow mock injection in tests.
 
 type asanaProvider interface {
-	GetWorkspaces() ([]asana.GetMultipleWorkspacesResponse, error)
-	GetProjects(workspaceId string) ([]asana.GetMultipleProjectsResponse, error)
-	GetSections(projectId string) ([]asana.AsanaSection, error)
+	GetWorkspaces(ctx context.Context) ([]asana.GetMultipleWorkspacesResponse, error)
+	GetProjects(ctx context.Context, workspaceId string) ([]asana.GetMultipleProjectsResponse, error)
+	GetSections(ctx context.Context, projectId string) ([]asana.AsanaSection, error)
 }
 
 type clickupProvider interface {
-	GetWorkspaces() ([]clickup.ClickUpTeams, error)
-	GetSpaces(workspaceId string) ([]clickup.ClickUpSpace, error)
-	GetLists(spaceId string) ([]clickup.ClickUpList, error)
-	GetListCustomFields(listId string) ([]clickup.ClickUpCustomField, error)
+	GetWorkspaces(ctx context.Context) ([]clickup.ClickUpTeams, error)
+	GetSpaces(ctx context.Context, workspaceId string) ([]clickup.ClickUpSpace, error)
+	GetLists(ctx context.Context, spaceId string) ([]clickup.ClickUpList, error)
+	GetListCustomFields(ctx context.Context, listId string) ([]clickup.ClickUpCustomField, error)
 }
 
 type IntegrationService struct {
@@ -38,39 +40,39 @@ func NewIntegrationService(
 // IntegrationServiceProvider is the interface consumed by handlers.
 // Allows substitution with mocks in tests.
 type IntegrationServiceProvider interface {
-	GetAsanaWorkspaces() ([]asana.GetMultipleWorkspacesResponse, error)
-	GetAsanaProjects(workspaceId string) ([]asana.GetMultipleProjectsResponse, error)
-	GetAsanaSections(projectId string) ([]asana.AsanaSection, error)
-	GetClickupWorkspaces() ([]clickup.ClickUpTeams, error)
-	GetClickupSpaces(workspaceId string) ([]clickup.ClickUpSpace, error)
-	GetClickupLists(spaceId string) ([]clickup.ClickUpList, error)
-	GetClickupListCustomFields(listId string) ([]clickup.ClickUpCustomField, error)
+	GetAsanaWorkspaces(ctx context.Context) ([]asana.GetMultipleWorkspacesResponse, error)
+	GetAsanaProjects(ctx context.Context, workspaceId string) ([]asana.GetMultipleProjectsResponse, error)
+	GetAsanaSections(ctx context.Context, projectId string) ([]asana.AsanaSection, error)
+	GetClickupWorkspaces(ctx context.Context) ([]clickup.ClickUpTeams, error)
+	GetClickupSpaces(ctx context.Context, workspaceId string) ([]clickup.ClickUpSpace, error)
+	GetClickupLists(ctx context.Context, spaceId string) ([]clickup.ClickUpList, error)
+	GetClickupListCustomFields(ctx context.Context, listId string) ([]clickup.ClickUpCustomField, error)
 }
 
-func (s *IntegrationService) GetAsanaWorkspaces() ([]asana.GetMultipleWorkspacesResponse, error) {
-	return s.asanaClient.GetWorkspaces()
+func (s *IntegrationService) GetAsanaWorkspaces(ctx context.Context) ([]asana.GetMultipleWorkspacesResponse, error) {
+	return s.asanaClient.GetWorkspaces(ctx)
 }
 
-func (s *IntegrationService) GetAsanaProjects(workspaceId string) ([]asana.GetMultipleProjectsResponse, error) {
-	return s.asanaClient.GetProjects(workspaceId)
+func (s *IntegrationService) GetAsanaProjects(ctx context.Context, workspaceId string) ([]asana.GetMultipleProjectsResponse, error) {
+	return s.asanaClient.GetProjects(ctx, workspaceId)
 }
 
-func (s *IntegrationService) GetAsanaSections(projectId string) ([]asana.AsanaSection, error) {
-	return s.asanaClient.GetSections(projectId)
+func (s *IntegrationService) GetAsanaSections(ctx context.Context, projectId string) ([]asana.AsanaSection, error) {
+	return s.asanaClient.GetSections(ctx, projectId)
 }
 
-func (s *IntegrationService) GetClickupWorkspaces() ([]clickup.ClickUpTeams, error) {
-	return s.clickupClient.GetWorkspaces()
+func (s *IntegrationService) GetClickupWorkspaces(ctx context.Context) ([]clickup.ClickUpTeams, error) {
+	return s.clickupClient.GetWorkspaces(ctx)
 }
 
-func (s *IntegrationService) GetClickupSpaces(workspaceId string) ([]clickup.ClickUpSpace, error) {
-	return s.clickupClient.GetSpaces(workspaceId)
+func (s *IntegrationService) GetClickupSpaces(ctx context.Context, workspaceId string) ([]clickup.ClickUpSpace, error) {
+	return s.clickupClient.GetSpaces(ctx, workspaceId)
 }
 
-func (s *IntegrationService) GetClickupLists(spaceId string) ([]clickup.ClickUpList, error) {
-	return s.clickupClient.GetLists(spaceId)
+func (s *IntegrationService) GetClickupLists(ctx context.Context, spaceId string) ([]clickup.ClickUpList, error) {
+	return s.clickupClient.GetLists(ctx, spaceId)
 }
 
-func (s *IntegrationService) GetClickupListCustomFields(listId string) ([]clickup.ClickUpCustomField, error) {
-	return s.clickupClient.GetListCustomFields(listId)
+func (s *IntegrationService) GetClickupListCustomFields(ctx context.Context, listId string) ([]clickup.ClickUpCustomField, error) {
+	return s.clickupClient.GetListCustomFields(ctx, listId)
 }

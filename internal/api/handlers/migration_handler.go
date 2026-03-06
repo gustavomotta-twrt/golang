@@ -118,7 +118,7 @@ func (h *MigrationHandler) CreateMigration(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	migrationID, state, err := h.migrationService.CreateMigration(service.CreateMigrationInput{
+	migrationID, state, err := h.migrationService.CreateMigration(r.Context(), service.CreateMigrationInput{
 		Source:          req.Source,
 		Destination:     req.Destination,
 		SourceProjectID: req.SourceProjectId,
@@ -145,7 +145,7 @@ func (h *MigrationHandler) GetMappings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	state, err := h.migrationService.SyncMappings(id)
+	state, err := h.migrationService.SyncMappings(r.Context(), id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "error syncing mappings: "+err.Error())
 		return
@@ -234,7 +234,7 @@ func (h *MigrationHandler) SaveMappings(w http.ResponseWriter, r *http.Request) 
 		})
 	}
 
-	state, err := h.migrationService.SaveMappings(id, assignees, containerInputs)
+	state, err := h.migrationService.SaveMappings(r.Context(), id, assignees, containerInputs)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "error saving mappings: "+err.Error())
 		return
@@ -259,7 +259,7 @@ func (h *MigrationHandler) GetDestContainerOptions(w http.ResponseWriter, r *htt
 		return
 	}
 
-	statuses, priorities, err := h.migrationService.GetDestContainerOptions(id, destContainerID)
+	statuses, priorities, err := h.migrationService.GetDestContainerOptions(r.Context(), id, destContainerID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "error getting dest container options: "+err.Error())
 		return

@@ -17,7 +17,7 @@ func NewIntegrationHandler(integrationService service.IntegrationServiceProvider
 }
 
 func (h *IntegrationHandler) GetAsanaWorkspaces(w http.ResponseWriter, r *http.Request) {
-	workspaces, err := h.integrationService.GetAsanaWorkspaces()
+	workspaces, err := h.integrationService.GetAsanaWorkspaces(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Error trying to get Asana Workspaces: "+err.Error())
 		return
@@ -27,7 +27,7 @@ func (h *IntegrationHandler) GetAsanaWorkspaces(w http.ResponseWriter, r *http.R
 
 func (h *IntegrationHandler) GetAsanaProjects(w http.ResponseWriter, r *http.Request) {
 	workspace := r.PathValue("id")
-	projects, err := h.integrationService.GetAsanaProjects(workspace)
+	projects, err := h.integrationService.GetAsanaProjects(r.Context(), workspace)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Error trying to get asana projects: "+err.Error())
 		return
@@ -37,7 +37,7 @@ func (h *IntegrationHandler) GetAsanaProjects(w http.ResponseWriter, r *http.Req
 
 func (h *IntegrationHandler) GetAsanaSections(w http.ResponseWriter, r *http.Request) {
 	projectId := r.PathValue("id")
-	sections, err := h.integrationService.GetAsanaSections(projectId)
+	sections, err := h.integrationService.GetAsanaSections(r.Context(), projectId)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Error trying to get Asana sections: "+err.Error())
 		return
@@ -46,7 +46,7 @@ func (h *IntegrationHandler) GetAsanaSections(w http.ResponseWriter, r *http.Req
 }
 
 func (h *IntegrationHandler) GetClickupWorkspaces(w http.ResponseWriter, r *http.Request) {
-	workspaces, err := h.integrationService.GetClickupWorkspaces()
+	workspaces, err := h.integrationService.GetClickupWorkspaces(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Error trying to get ClickUp Workspaces: "+err.Error())
 		return
@@ -56,7 +56,7 @@ func (h *IntegrationHandler) GetClickupWorkspaces(w http.ResponseWriter, r *http
 
 func (h *IntegrationHandler) GetClickupSpaces(w http.ResponseWriter, r *http.Request) {
 	workspaceId := r.PathValue("id")
-	spaces, err := h.integrationService.GetClickupSpaces(workspaceId)
+	spaces, err := h.integrationService.GetClickupSpaces(r.Context(), workspaceId)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Error trying to get ClickUp spaces: "+err.Error())
 		return
@@ -66,7 +66,7 @@ func (h *IntegrationHandler) GetClickupSpaces(w http.ResponseWriter, r *http.Req
 
 func (h *IntegrationHandler) GetClickupLists(w http.ResponseWriter, r *http.Request) {
 	spaceId := r.PathValue("id")
-	lists, err := h.integrationService.GetClickupLists(spaceId)
+	lists, err := h.integrationService.GetClickupLists(r.Context(), spaceId)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Error trying to get ClickUp lists: "+err.Error())
 		return
@@ -76,7 +76,7 @@ func (h *IntegrationHandler) GetClickupLists(w http.ResponseWriter, r *http.Requ
 
 func (h *IntegrationHandler) GetClickupListCustomFields(w http.ResponseWriter, r *http.Request) {
 	listId := r.PathValue("id")
-	fields, err := h.integrationService.GetClickupListCustomFields(listId)
+	fields, err := h.integrationService.GetClickupListCustomFields(r.Context(), listId)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Error trying to get ClickUp list custom fields: "+err.Error())
 		return
