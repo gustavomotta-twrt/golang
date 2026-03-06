@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/TWRT/integration-mapper/internal/client"
@@ -30,13 +31,17 @@ type ClickUpClient struct {
 	baseUrl    string
 	token      string
 	httpClient *http.Client
+
+	memberCacheMu sync.RWMutex
+	memberCache   map[string][]models.Member // workspaceId → members
 }
 
 func NewClickUpClient(token string) *ClickUpClient {
 	return &ClickUpClient{
-		baseUrl:    "https://api.clickup.com/api/v2",
-		token:      token,
-		httpClient: &http.Client{Timeout: 10 * time.Second},
+		baseUrl:     "https://api.clickup.com/api/v2",
+		token:       token,
+		httpClient:  &http.Client{Timeout: 10 * time.Second},
+		memberCache: make(map[string][]models.Member),
 	}
 }
 
@@ -325,6 +330,15 @@ func (c *ClickUpClient) GetWorkspaces(ctx context.Context) ([]ClickUpTeams, erro
 }
 
 func (c *ClickUpClient) GetMembers(ctx context.Context, workspaceId string) ([]models.Member, error) {
+	// Fast path: cache hit
+	c.memberCacheMu.RLock()
+	if cached, ok := c.memberCache[workspaceId]; ok {
+		c.memberCacheMu.RUnlock()
+		return cached, nil
+	}
+	c.memberCacheMu.RUnlock()
+
+	// Slow path: fetch from API
 	teams, err := c.GetWorkspaces(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("get workspace members (clickup): %w", err)
@@ -340,6 +354,16 @@ func (c *ClickUpClient) GetMembers(ctx context.Context, workspaceId string) ([]m
 					Email: m.User.Email,
 				})
 			}
+
+			// Double-check: another goroutine may have populated while we fetched
+			c.memberCacheMu.Lock()
+			if existing, ok := c.memberCache[workspaceId]; ok {
+				c.memberCacheMu.Unlock()
+				return existing, nil
+			}
+			c.memberCache[workspaceId] = members
+			c.memberCacheMu.Unlock()
+
 			return members, nil
 		}
 	}
