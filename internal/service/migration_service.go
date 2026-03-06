@@ -773,23 +773,19 @@ func (s *MigrationService) StartMigration(migrationID int64) error {
 
 // ---- Execution ----
 
-func mapStatus(taskStatus string, mappings []MappingItem) string {
-	for _, m := range mappings {
-		if m.SourceValue == taskStatus && m.DestValue != nil {
-			return *m.DestValue
-		}
+func mapStatus(taskStatus string, m map[string]string) string {
+	if dest, ok := m[taskStatus]; ok {
+		return dest
 	}
 	return "to do"
 }
 
-func mapPriority(taskPriority string, mappings []MappingItem) string {
+func mapPriority(taskPriority string, m map[string]string) string {
 	if taskPriority == "" {
 		return ""
 	}
-	for _, m := range mappings {
-		if m.SourceValue == taskPriority && m.DestValue != nil {
-			return *m.DestValue
-		}
+	if dest, ok := m[taskPriority]; ok {
+		return dest
 	}
 	return ""
 }
@@ -875,8 +871,8 @@ func (s *MigrationService) executeMigration(
 		var tasksByContainer []struct {
 			destID string
 			tasks  []models.Task
-			status []MappingItem
-			prio   []MappingItem
+			status map[string]string
+			prio   map[string]string
 		}
 
 		for _, cm := range containerMappings {
@@ -901,14 +897,17 @@ func (s *MigrationService) executeMigration(
 			if err != nil {
 				slog.Warn("could not load per-container mappings, using empty", "container", cm.SourceID, "error", err)
 			}
-			var statusMappings, priorityMappings []MappingItem
+			statusMap := make(map[string]string)
+			priorityMap := make(map[string]string)
 			for _, m := range perContainerMappings {
-				item := MappingItem{SourceValue: m.SourceValue, DestValue: m.DestValue, Status: string(m.Status)}
+				if m.DestValue == nil {
+					continue
+				}
 				switch m.Type {
 				case repository.MappingTypeStatus:
-					statusMappings = append(statusMappings, item)
+					statusMap[m.SourceValue] = *m.DestValue
 				case repository.MappingTypePriority:
-					priorityMappings = append(priorityMappings, item)
+					priorityMap[m.SourceValue] = *m.DestValue
 				}
 			}
 
@@ -920,9 +919,9 @@ func (s *MigrationService) executeMigration(
 			tasksByContainer = append(tasksByContainer, struct {
 				destID string
 				tasks  []models.Task
-				status []MappingItem
-				prio   []MappingItem
-			}{destID, containerTasks, statusMappings, priorityMappings})
+				status map[string]string
+				prio   map[string]string
+			}{destID, containerTasks, statusMap, priorityMap})
 
 			totalTasks += len(containerTasks)
 		}
@@ -994,14 +993,17 @@ func (s *MigrationService) executeMigration(
 			slog.Error("failed to load mappings", "migration_id", migration.Id, "error", err)
 			return
 		}
-		var statusMappings, priorityMappings []MappingItem
+		statusMap := make(map[string]string)
+		priorityMap := make(map[string]string)
 		for _, m := range allMappings {
-			item := MappingItem{SourceValue: m.SourceValue, DestValue: m.DestValue, Status: string(m.Status)}
+			if m.DestValue == nil {
+				continue
+			}
 			switch m.Type {
 			case repository.MappingTypeStatus:
-				statusMappings = append(statusMappings, item)
+				statusMap[m.SourceValue] = *m.DestValue
 			case repository.MappingTypePriority:
-				priorityMappings = append(priorityMappings, item)
+				priorityMap[m.SourceValue] = *m.DestValue
 			}
 		}
 
@@ -1021,8 +1023,8 @@ func (s *MigrationService) executeMigration(
 		)
 
 		for _, task := range tasks {
-			task.Status = mapStatus(task.Status, statusMappings)
-			task.Priority = mapPriority(task.Priority, priorityMappings)
+			task.Status = mapStatus(task.Status, statusMap)
+			task.Priority = mapPriority(task.Priority, priorityMap)
 
 			if task.Priority != "" && len(priorityOptions) > 0 {
 				fieldGid := priorityOptions["__field_gid__"]

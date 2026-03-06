@@ -52,6 +52,52 @@ func formatDueDate(t *time.Time) string {
 	return t.UTC().Format("2006-01-02")
 }
 
+// parseAsanaTask converts an AsanaTasks (API type) into a models.Task (domain type).
+func parseAsanaTask(asanaTask AsanaTasks) (models.Task, error) {
+	status := "Incomplete"
+	if asanaTask.Completed {
+		status = "Completed"
+	}
+
+	var assignees []models.TaskAssignee
+	if asanaTask.Assignee != nil {
+		assignees = []models.TaskAssignee{{
+			ID:    asanaTask.Assignee.Gid,
+			Name:  asanaTask.Assignee.Name,
+			Email: asanaTask.Assignee.Email,
+		}}
+	}
+
+	dueDate, err := parseDueDate(asanaTask.DueOn)
+	if err != nil {
+		return models.Task{}, err
+	}
+
+	var priority string
+	for _, cf := range asanaTask.CustomFields {
+		if cf.Name == "Priority" && cf.EnumValue != nil {
+			priority = cf.EnumValue.Name
+			break
+		}
+	}
+
+	tags := make([]string, 0, len(asanaTask.Tags))
+	for _, t := range asanaTask.Tags {
+		tags = append(tags, t.Name)
+	}
+
+	return models.Task{
+		Id:          asanaTask.Gid,
+		Name:        asanaTask.Name,
+		Description: asanaTask.Notes,
+		Status:      status,
+		Assignees:   assignees,
+		DueDate:     dueDate,
+		Priority:    priority,
+		Tags:        tags,
+	}, nil
+}
+
 func (c *AsanaClient) GetTasks(ctx context.Context, projectId string) ([]models.Task, error) {
 	url := c.baseUrl + "/tasks?project=" + projectId +
 		"&opt_fields=name,notes,completed,assignee,assignee.gid,assignee.name,assignee.email,due_on,custom_fields,custom_fields.name,custom_fields.enum_value,custom_fields.enum_value.name,tags,tags.name"
@@ -96,49 +142,12 @@ func (c *AsanaClient) GetTasks(ctx context.Context, projectId string) ([]models.
 	}
 
 	tasks := make([]models.Task, len(asanaResp.Data))
-	for i, asanaTask := range asanaResp.Data {
-		status := "Incomplete"
-		if asanaTask.Completed {
-			status = "Completed"
-		}
-
-		var assignees []models.TaskAssignee
-		if asanaTask.Assignee != nil {
-			assignees = []models.TaskAssignee{{
-				ID:    asanaTask.Assignee.Gid,
-				Name:  asanaTask.Assignee.Name,
-				Email: asanaTask.Assignee.Email,
-			}}
-		}
-
-		dueDate, err := parseDueDate(asanaTask.DueOn)
+	for i, t := range asanaResp.Data {
+		task, err := parseAsanaTask(t)
 		if err != nil {
 			return nil, err
 		}
-
-		var priority string
-		for _, cf := range asanaTask.CustomFields {
-			if cf.Name == "Priority" && cf.EnumValue != nil {
-				priority = cf.EnumValue.Name
-				break
-			}
-		}
-
-		tags := make([]string, 0, len(asanaTask.Tags))
-		for _, t := range asanaTask.Tags {
-			tags = append(tags, t.Name)
-		}
-
-		tasks[i] = models.Task{
-			Id:          asanaTask.Gid,
-			Name:        asanaTask.Name,
-			Description: asanaTask.Notes,
-			Status:      status,
-			Assignees:   assignees,
-			DueDate:     dueDate,
-			Priority:    priority,
-			Tags:        tags,
-		}
+		tasks[i] = task
 	}
 
 	return tasks, nil
@@ -660,49 +669,12 @@ func (c *AsanaClient) GetTasksBySection(ctx context.Context, sectionId string) (
 	}
 
 	tasks := make([]models.Task, len(asanaResp.Data))
-	for i, asanaTask := range asanaResp.Data {
-		status := "Incomplete"
-		if asanaTask.Completed {
-			status = "Completed"
-		}
-
-		var assignees []models.TaskAssignee
-		if asanaTask.Assignee != nil {
-			assignees = []models.TaskAssignee{{
-				ID:    asanaTask.Assignee.Gid,
-				Name:  asanaTask.Assignee.Name,
-				Email: asanaTask.Assignee.Email,
-			}}
-		}
-
-		dueDate, err := parseDueDate(asanaTask.DueOn)
+	for i, t := range asanaResp.Data {
+		task, err := parseAsanaTask(t)
 		if err != nil {
 			return nil, err
 		}
-
-		var priority string
-		for _, cf := range asanaTask.CustomFields {
-			if cf.Name == "Priority" && cf.EnumValue != nil {
-				priority = cf.EnumValue.Name
-				break
-			}
-		}
-
-		tags := make([]string, 0, len(asanaTask.Tags))
-		for _, t := range asanaTask.Tags {
-			tags = append(tags, t.Name)
-		}
-
-		tasks[i] = models.Task{
-			Id:          asanaTask.Gid,
-			Name:        asanaTask.Name,
-			Description: asanaTask.Notes,
-			Status:      status,
-			Assignees:   assignees,
-			DueDate:     dueDate,
-			Priority:    priority,
-			Tags:        tags,
-		}
+		tasks[i] = task
 	}
 
 	return tasks, nil
