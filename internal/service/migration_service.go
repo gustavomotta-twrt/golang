@@ -982,9 +982,12 @@ func (s *MigrationService) executeMigration(
 					slog.Info("task migrated", "migration_id", migration.Id, "dest_task_id", created.Id)
 					successCount++
 				}
-				s.migrationRepo.UpdateProgress(migration.Id, successCount, failCount)
+				if (successCount+failCount)%10 == 0 {
+					s.migrationRepo.UpdateProgress(migration.Id, successCount, failCount)
+				}
 			}
 		}
+		s.migrationRepo.UpdateProgress(migration.Id, successCount, failCount)
 	} else {
 		// Non-container source: load all mappings globally
 		allMappings, err := s.migrationMappingRepo.GetGlobalByMigrationID(migration.Id)
@@ -1069,8 +1072,11 @@ func (s *MigrationService) executeMigration(
 				slog.Info("task migrated", "migration_id", migration.Id, "dest_task_id", created.Id)
 				successCount++
 			}
-			s.migrationRepo.UpdateProgress(migration.Id, successCount, failCount)
+			if (successCount+failCount)%10 == 0 {
+				s.migrationRepo.UpdateProgress(migration.Id, successCount, failCount)
+			}
 		}
+		s.migrationRepo.UpdateProgress(migration.Id, successCount, failCount)
 	}
 
 	finalStatus := repository.MigrationStatusCompleted
