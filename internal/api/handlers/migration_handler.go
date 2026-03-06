@@ -85,14 +85,14 @@ func (h *MigrationHandler) CreateMigration(w http.ResponseWriter, r *http.Reques
 		if errors.As(err, &maxErr) {
 			writeError(w, http.StatusRequestEntityTooLarge, "request body too large")
 		} else {
-			writeError(w, http.StatusBadRequest, "error reading body: "+err.Error())
+			writeError(w, http.StatusBadRequest, "invalid request body")
 		}
 		return
 	}
 
 	var req CreateMigrationRequestBody
 	if err := json.Unmarshal(body, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		writeError(w, http.StatusBadRequest, "invalid request format")
 		return
 	}
 
@@ -130,7 +130,8 @@ func (h *MigrationHandler) CreateMigration(w http.ResponseWriter, r *http.Reques
 		DestSpaceID:     req.DestSpaceId,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "error creating migration: "+err.Error())
+		slog.Error("failed to create migration", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to create migration")
 		return
 	}
 
@@ -150,7 +151,8 @@ func (h *MigrationHandler) GetMappings(w http.ResponseWriter, r *http.Request) {
 
 	state, err := h.migrationService.SyncMappings(r.Context(), id)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "error syncing mappings: "+err.Error())
+		slog.Error("failed to sync mappings", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to sync mappings")
 		return
 	}
 
@@ -172,14 +174,14 @@ func (h *MigrationHandler) SaveMappings(w http.ResponseWriter, r *http.Request) 
 		if errors.As(err, &maxErr) {
 			writeError(w, http.StatusRequestEntityTooLarge, "request body too large")
 		} else {
-			writeError(w, http.StatusBadRequest, "error reading body: "+err.Error())
+			writeError(w, http.StatusBadRequest, "invalid request body")
 		}
 		return
 	}
 
 	var req SaveMappingsRequestBody
 	if err := json.Unmarshal(body, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		writeError(w, http.StatusBadRequest, "invalid request format")
 		return
 	}
 
@@ -239,7 +241,8 @@ func (h *MigrationHandler) SaveMappings(w http.ResponseWriter, r *http.Request) 
 
 	state, err := h.migrationService.SaveMappings(r.Context(), id, assignees, containerInputs)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "error saving mappings: "+err.Error())
+		slog.Error("failed to save mappings", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to save mappings")
 		return
 	}
 
@@ -264,7 +267,8 @@ func (h *MigrationHandler) GetDestContainerOptions(w http.ResponseWriter, r *htt
 
 	statuses, priorities, err := h.migrationService.GetDestContainerOptions(r.Context(), id, destContainerID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "error getting dest container options: "+err.Error())
+		slog.Error("failed to get destination container options", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to get destination container options")
 		return
 	}
 
@@ -282,7 +286,8 @@ func (h *MigrationHandler) StartMigration(w http.ResponseWriter, r *http.Request
 	}
 
 	if err := h.migrationService.StartMigration(id); err != nil {
-		writeError(w, http.StatusBadRequest, "error starting migration: "+err.Error())
+		slog.Error("failed to start migration", "migration_id", id, "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to start migration")
 		return
 	}
 
@@ -302,7 +307,8 @@ func (h *MigrationHandler) GetMigration(w http.ResponseWriter, r *http.Request) 
 
 	migration, err := h.migrationService.GetMigration(id)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "error getting migration: "+err.Error())
+		slog.Error("failed to get migration", "migration_id", id, "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to get migration")
 		return
 	}
 
@@ -314,7 +320,8 @@ func (h *MigrationHandler) GetMigration(w http.ResponseWriter, r *http.Request) 
 func (h *MigrationHandler) ListMigrations(w http.ResponseWriter, r *http.Request) {
 	migrations, err := h.migrationService.GetMigrations()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "error listing migrations: "+err.Error())
+		slog.Error("failed to list migrations", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to list migrations")
 		return
 	}
 
